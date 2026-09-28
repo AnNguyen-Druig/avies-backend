@@ -1,1 +1,20 @@
-spring.application.name=avies-backend
+spring:
+  application:
+    name: avies-backend
+
+  datasource:
+    # URL kết nối JDBC tới Supabase (bắt buộc phải có sslmode=require)
+    url: ${DB_URL:jdbc:postgresql://aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres?sslmode=require}
+    username: ${DB_USERNAME:postgres.voxiuiegwisepvmzddgy}
+    password: ${DB_PASSWORD:r4!3C-P/Q-suRu3}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      # update: tự động tạo/cập nhật bảng theo Entity (rất tiện khi dev)
+      # validate hoặc none: dùng khi đã quản lý schema bằng Migration (Flyway/Liquibase)
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
