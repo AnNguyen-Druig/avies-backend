@@ -3,18 +3,32 @@ spring:
     name: avies-backend
 
   datasource:
-    # URL kết nối JDBC tới Supabase (bắt buộc phải có sslmode=require)
-    url: ${DB_URL:jdbc:postgresql://aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require}
+    # URL ket noi JDBC toi Supabase Postgres voi schema aives
+    url: ${DB_URL:jdbc:postgresql://aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require&currentSchema=aives}
     username: ${DB_USERNAME:postgres.zgdllubbmtqvzfsmezpg}
     password: ${DB_PASSWORD:Aives-Supabase-2026-Db}
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      # update: tự động tạo/cập nhật bảng theo Entity (rất tiện khi dev)
-      # validate hoặc none: dùng khi đã quản lý schema bằng Migration (Flyway/Liquibase)
       ddl-auto: validate
-    show-sql: true
     properties:
       hibernate:
+        default_schema: aives
         format_sql: true
+    show-sql: true
+
+# JWT Configuration (Secret Key 64+ bytes cho thuat toan HS512)
+jwt:
+  signerKey: ${JWT_SIGNER_KEY:56235e27daf8f8e68ce33febf5400cf93dbd5f6ec40a14531754168ea0d324869876543210abcdef0123456789abcdef}
+  valid-duration: ${JWT_VALID_DURATION:3600}          # 1 gio (tinh bang giay)
+  refreshable-duration: ${JWT_REFRESH_DURATION:604800} # 7 ngay (tinh bang giay)
+
+# CORS Configuration
+app:
+  cors:
+    allowed-origin-patterns:
+      - "http://localhost:3000"
+      - "http://localhost:5173"
+      - "http://localhost:8080"
+      - "*"
