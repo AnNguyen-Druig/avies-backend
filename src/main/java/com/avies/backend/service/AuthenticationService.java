@@ -61,32 +61,6 @@ public class AuthenticationService {
     protected long refreshableDuration;
 
     /**
-     * Xử lý đăng nhập (/auth/signin)
-     * 1. Tìm user theo username hoặc email
-     * 2. Kiểm tra mật khẩu mã hóa BCrypt
-     * 3. Sinh token JWT với scope và claims người dùng
-     */
-    public AuthenticationResponse authenticate(AuthenticationRequest request) {
-        var user = userRepository.findByUsername(request.getUsername())
-                .or(() -> userRepository.findByEmail(request.getUsername()))
-                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
-
-        if (user.getPasswordHash() == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new AppException(ErrorCode.INVALID_CREDENTIALS);
-        }
-
-        var token = generateToken(user);
-
-        return AuthenticationResponse.builder()
-                .token(token)
-                .authenticated(true)
-                .role(user.getRole() != null ? user.getRole().getCode() : null)
-                .username(user.getUsername())
-                .fullName(user.getFullName())
-                .build();
-    }
-
-    /**
      * Xử lý đăng ký tài khoản (/auth/signup)
      * 1. Kiểm tra username & email trùng lặp
      * 2. Gán Role (mặc định STUDENT hoặc theo yêu cầu)
@@ -125,7 +99,32 @@ public class AuthenticationService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .role(user.getRole().getCode())
-                .createdAt(user.getCreatedAt())
+                .build();
+    }
+
+    /**
+     * Xử lý đăng nhập (/auth/signin)
+     * 1. Tìm user theo username hoặc email
+     * 2. Kiểm tra mật khẩu mã hóa BCrypt
+     * 3. Sinh token JWT với scope và claims người dùng
+     */
+    public AuthenticationResponse authenticate(AuthenticationRequest request) {
+        var user = userRepository.findByUsername(request.getUsername())
+                .or(() -> userRepository.findByEmail(request.getUsername()))
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+
+        if (user.getPasswordHash() == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new AppException(ErrorCode.INVALID_CREDENTIALS);
+        }
+
+        var token = generateToken(user);
+
+        return AuthenticationResponse.builder()
+                .token(token)
+                .authenticated(true)
+                .role(user.getRole() != null ? user.getRole().getCode() : null)
+                .username(user.getUsername())
+                .fullName(user.getFullName())
                 .build();
     }
 
@@ -168,7 +167,7 @@ public class AuthenticationService {
     }
 
     /**
-     * Làm mới token (/auth/refresh và /auth/refesh)
+     * Làm mới token (/auth/refresh)
      * 1. Xác thực token cũ còn trong cửa sổ refresh
      * 2. Blacklist token cũ chống replay attack
      * 3. Sinh token mới cho user

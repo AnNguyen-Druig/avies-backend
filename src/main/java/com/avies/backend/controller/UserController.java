@@ -5,6 +5,7 @@ import com.avies.backend.dto.response.UserResponse;
 import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
 import com.avies.backend.repository.UserRepository;
+import com.avies.backend.service.UserService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -15,6 +16,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @Slf4j
 @RestController
 @RequestMapping("/users")
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     UserRepository userRepository;
+    private final UserService userService;
 
     /**
      * Lấy thông tin user hiện tại đang đăng nhập từ SecurityContext
@@ -44,6 +48,17 @@ public class UserController {
                         .role(user.getRole() != null ? user.getRole().getCode() : null)
                         .createdAt(user.getCreatedAt())
                         .build())
+                .build();
+    }
+
+    /**
+     * Lấy thông tin tất cả Users
+     */
+    @GetMapping
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ApiResponse<List<UserResponse>> getAllUsers() {
+        return ApiResponse.<List<UserResponse>>builder()
+                .result(userService.getAllUsers())
                 .build();
     }
 

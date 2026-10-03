@@ -52,10 +52,10 @@ public class AuthenticationController {
     }
 
     /**
-     * API Làm mới Access Token (Hỗ trợ cả /auth/refresh và /auth/refesh)
-     * POST /auth/refresh hoặc POST /auth/refesh
+     * API Làm mới Access Token (Hỗ trợ cả /auth/refresh)
+     * POST /auth/refresh
      */
-    @PostMapping({"/refresh", "/refesh"})
+    @PostMapping({"/refresh"})
     public ApiResponse<AuthenticationResponse> refresh(@RequestBody @Valid RefreshRequest request)
             throws ParseException, JOSEException {
         var result = authenticationService.refreshToken(request);

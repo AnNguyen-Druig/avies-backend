@@ -20,7 +20,14 @@ public enum ErrorCode {
     PASSWORD_REQUIRED(1012, "Password is required", HttpStatus.BAD_REQUEST),
     FULLNAME_REQUIRED(1013, "Full name is required", HttpStatus.BAD_REQUEST),
     TOKEN_INVALID(1014, "Token is invalid or expired", HttpStatus.UNAUTHORIZED),
-    INVALID_CREDENTIALS(1015, "Username or Password is incorrect", HttpStatus.UNAUTHORIZED);
+    INVALID_CREDENTIALS(1015, "Username or Password is incorrect", HttpStatus.UNAUTHORIZED),
+    SUBJECT_NOT_EXISTED(1016, "Subject not found", HttpStatus.NOT_FOUND),
+    FILE_EMPTY(1017, "Uploaded file cannot be empty", HttpStatus.BAD_REQUEST),
+    UNSUPPORTED_FILE_TYPE(1018, "Unsupported file format. Please upload PDF, DOCX, PPTX, or TXT", HttpStatus.BAD_REQUEST),
+    FILE_PARSING_FAILED(1019, "Failed to parse content from file", HttpStatus.INTERNAL_SERVER_ERROR),
+    OPENAI_API_ERROR(1020, "Failed to generate embeddings via AI service", HttpStatus.INTERNAL_SERVER_ERROR),
+    MATERIAL_NOT_EXISTED(1021, "Learning material not found", HttpStatus.NOT_FOUND),
+    SUBJECT_EXISTED(1022, "Subject code already exists", HttpStatus.BAD_REQUEST);
 
 
     private final int code;

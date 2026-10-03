@@ -3,25 +3,36 @@ spring:
     name: avies-backend
 
   datasource:
-    # URL ket noi JDBC toi Supabase Postgres voi schema aives
-    url: ${DB_URL:jdbc:postgresql://aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require&currentSchema=aives}
+    # URL ket noi JDBC toi Supabase Postgres voi schema aives va public (chua extension pgvector)
+    url: ${DB_URL:jdbc:postgresql://aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require&currentSchema=aives,public,extensions}
     username: ${DB_USERNAME:postgres.zgdllubbmtqvzfsmezpg}
     password: ${DB_PASSWORD:Aives-Supabase-2026-Db}
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none
     properties:
       hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
         default_schema: aives
         format_sql: true
     show-sql: true
 
+# OpenAI Configuration for RAG & Embeddings
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+  embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+
+# Storage Configuration
+storage:
+  location: ${STORAGE_LOCATION:uploads/materials}
+
 # JWT Configuration (Secret Key 64+ bytes cho thuat toan HS512)
 jwt:
   signerKey: ${JWT_SIGNER_KEY:56235e27daf8f8e68ce33febf5400cf93dbd5f6ec40a14531754168ea0d324869876543210abcdef0123456789abcdef}
-  valid-duration: ${JWT_VALID_DURATION:3600}          # 1 gio (tinh bang giay)
+  valid-duration: ${JWT_VALID_DURATION:900}          # 15 phut (tinh bang giay)
   refreshable-duration: ${JWT_REFRESH_DURATION:604800} # 7 ngay (tinh bang giay)
 
 # CORS Configuration
