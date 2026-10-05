@@ -13,19 +13,19 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class SignUpRequest {
 
-    @NotBlank(message = "USERNAME_REQUIRED")
-    @Size(min = 3, max = 50, message = "INVALID_REQUEST")
+    @NotBlank(message = "Username không được để trống")
+    @Size(min = 3, max = 50, message = "Request không hợp lệ")
     String username;
 
-    @NotBlank(message = "EMAIL_REQUIRED")
-    @Email(message = "INVALID_EMAIL")
+    @NotBlank(message = "Email không được để trống")
+    @Email(message = "Email không hợp lệ")
     String email;
 
-    @NotBlank(message = "PASSWORD_REQUIRED")
-    @Size(min = 6, message = "PASSWORD_TOO_SHORT")
+    @NotBlank(message = "Mật khẩu không được để trống")
+    @Size(min = 6, message = "Mật khẩu quá ngắn")
     String password;
 
-    @NotBlank(message = "FULLNAME_REQUIRED")
+    @NotBlank(message = "Fullname không được để trống")
     String fullName;
 
     // Optional: STUDENT, LECTURER, ADMIN (mac dinh: STUDENT)

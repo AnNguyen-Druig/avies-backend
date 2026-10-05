@@ -1,6 +1,7 @@
 package com.avies.backend.service.impl;
 
 import com.avies.backend.dto.request.SubjectCreationRequest;
+import com.avies.backend.dto.request.SubjectUpdateRequest;
 import com.avies.backend.dto.response.SubjectResponse;
 import com.avies.backend.entity.Subject;
 import com.avies.backend.exception.AppException;
@@ -49,6 +50,40 @@ public class SubjectServiceImpl implements SubjectService {
         return subjectRepository.findAll().stream()
                 .map(this::toSubjectResponse)
                 .toList();
+    }
+
+    @Transactional
+    public SubjectResponse updateSubject(Long id, SubjectUpdateRequest request) {
+        Subject subject = subjectRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.SUBJECT_NOT_EXISTED));
+
+        if (request.getCode() != null && !request.getCode().isBlank()) {
+            String newCode = request.getCode().trim().toUpperCase();
+            if (!subject.getCode().equals(newCode) && subjectRepository.existsByCode(newCode)) {
+                throw new AppException(ErrorCode.SUBJECT_EXISTED);
+            }
+            subject.setCode(newCode);
+        }
+
+        if (request.getName() != null && !request.getName().isBlank()) {
+            subject.setName(request.getName().trim());
+        }
+
+        if (request.getDescription() != null) {
+            subject.setDescription(request.getDescription());
+        }
+
+        subject = subjectRepository.save(subject);
+        return toSubjectResponse(subject);
+    }
+
+    @Transactional
+    public void deleteSubject(Long id) {
+        if (!subjectRepository.existsById(id)) {
+            throw new AppException(ErrorCode.SUBJECT_NOT_EXISTED);
+        }
+        // Chú ý: Cần xử lý cẩn thận nếu môn học đã có tài liệu (LearningMaterial) tham chiếu tới
+        subjectRepository.deleteById(id);
     }
 
     @Transactional(readOnly = true)

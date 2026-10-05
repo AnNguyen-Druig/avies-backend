@@ -10,6 +10,6 @@ import lombok.experimental.FieldDefaults;
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RefreshRequest {
-    @NotBlank(message = "TOKEN_INVALID")
+    @NotBlank(message = "Token không hợp lệ")
     String token;
 }
