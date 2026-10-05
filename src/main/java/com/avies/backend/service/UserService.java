@@ -1,28 +1,9 @@
 package com.avies.backend.service;
 
 import com.avies.backend.dto.response.UserResponse;
-import com.avies.backend.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
 import java.util.List;
 
-@Service
-@RequiredArgsConstructor
-public class UserService {
+public interface UserService {
 
-    private final UserRepository userRepository;
-
-    public List<UserResponse> getAllUsers() {
-        return userRepository.findAll().stream()
-                .map(user -> UserResponse.builder()
-                        .id(user.getId())
-                        .username(user.getUsername())
-                        .email(user.getEmail())
-                        .fullName(user.getFullName())
-                        .role(user.getRole() != null ? user.getRole().getCode() : null)
-                        .createdAt(user.getCreatedAt())
-                        .build())
-                .toList();
-    }
+    List<UserResponse> getAllUsers();
 }
