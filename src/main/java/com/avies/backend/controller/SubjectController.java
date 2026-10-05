@@ -1,6 +1,7 @@
 package com.avies.backend.controller;
 
 import com.avies.backend.dto.request.SubjectCreationRequest;
+import com.avies.backend.dto.request.SubjectUpdateRequest;
 import com.avies.backend.dto.response.ApiResponse;
 import com.avies.backend.dto.response.SubjectResponse;
 import com.avies.backend.service.SubjectService;
@@ -64,6 +65,30 @@ public class SubjectController {
         return ApiResponse.<SubjectResponse>builder()
                 .code(1000)
                 .result(response)
+                .build();
+    }
+
+    /**
+     * Update môn học theo ID
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_LECTURER')")
+    public ApiResponse<SubjectResponse> updateSubject(@PathVariable Long id, @Valid @RequestBody SubjectUpdateRequest request) {
+        return ApiResponse.<SubjectResponse>builder()
+                .code(1000)
+                .result(subjectService.updateSubject(id, request))
+                .build();
+    }
+
+    /**
+     * Xóa môn học theo ID
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_LECTURER')")
+    public ApiResponse<String> deleteSubject(@PathVariable Long id) {
+        subjectService.deleteSubject(id);
+        return ApiResponse.<String>builder()
+                .result("Xóa môn học thành công")
                 .build();
     }
 }
