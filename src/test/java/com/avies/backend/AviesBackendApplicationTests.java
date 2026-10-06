@@ -2,11 +2,16 @@ package com.avies.backend;
 
 import com.avies.backend.repository.LearningMaterialChunkRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+/** Test dịch vụ bên ngoài; chỉ chạy khi người thực hiện chủ động cho phép truy cập database và AI. */
+@Tag("external-services")
+@EnabledIfSystemProperty(named = "allowExternalServices", matches = "true")
 @SpringBootTest
 class AviesBackendApplicationTests {
 

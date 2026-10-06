@@ -5,6 +5,7 @@ import com.avies.backend.service.AuthenticationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -25,17 +26,21 @@ public class CustomJwtDecoder implements JwtDecoder {
 
     private NimbusJwtDecoder nimbusJwtDecoder = null;
 
+    /** Phân biệt token không hợp lệ (HTTP 401) với lỗi dịch vụ khi kiểm tra token. */
     @Override
     public Jwt decode(String token) throws JwtException {
+        boolean valid;
         try {
             var response = authenticationService.introspect(
                     IntrospectRequest.builder().token(token).build());
 
-            if (!response.isValid()) {
-                throw new JwtException("Token invalid or expired");
-            }
+            valid = response.isValid();
         } catch (Exception e) {
             throw new JwtException(e.getMessage());
+        }
+
+        if (!valid) {
+            throw new BadJwtException("Token invalid or expired");
         }
 
         if (Objects.isNull(nimbusJwtDecoder)) {
