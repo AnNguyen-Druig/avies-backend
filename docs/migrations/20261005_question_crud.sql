@@ -92,6 +92,12 @@ CREATE INDEX IF NOT EXISTS idx_question_audit_question ON aives.question_audit_l
 CREATE INDEX IF NOT EXISTS idx_question_subject_status ON aives.questions(subject_id, status, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_question_creator ON aives.questions(created_by, created_at, id);
 
+-- Bật bảo vệ theo dòng cho các bảng mới.
+-- Chưa mở quyền truy cập trực tiếp cho client qua Supabase Data API.
+ALTER TABLE aives.question_topics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE aives.lecturer_subject_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE aives.question_audit_logs ENABLE ROW LEVEL SECURITY;
+
 COMMIT;
 
 -- Sau khi áp dụng có phê duyệt: xem các bản ghi cần phân loại, không tự UPDATE.

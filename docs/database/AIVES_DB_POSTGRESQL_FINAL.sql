@@ -509,6 +509,11 @@ CREATE TABLE IF NOT EXISTS transcripts (
         )
 );
 
+-- Bật bảo vệ theo dòng cho các bảng nền móng Question CRUD.
+ALTER TABLE aives.question_topics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE aives.lecturer_subject_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE aives.question_audit_logs ENABLE ROW LEVEL SECURITY;
+
 
 -- ============================================================
 -- 6. INDEXES
