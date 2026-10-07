@@ -74,11 +74,12 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             throw new AppException(ErrorCode.EMAIL_EXISTED);
         }
 
-        String targetRoleCode = (request.getRoleCode() != null && !request.getRoleCode().isBlank())
-                ? request.getRoleCode().trim().toUpperCase()
-                : "STUDENT";
+        if (request.getRoleCode() != null && !request.getRoleCode().isBlank()
+                && !"STUDENT".equalsIgnoreCase(request.getRoleCode().trim())) {
+            throw new AppException(ErrorCode.ROLE_NOT_ALLOWED, "Đăng ký chỉ cho phép vai trò STUDENT");
+        }
 
-        Role role = roleRepository.findByCode(targetRoleCode)
+        Role role = roleRepository.findByCode("STUDENT")
                 .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_EXISTED));
 
         User user = User.builder()

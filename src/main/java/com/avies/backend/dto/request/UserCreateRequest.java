@@ -11,23 +11,23 @@ import lombok.experimental.FieldDefaults;
 @AllArgsConstructor
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class SignUpRequest {
+public class UserCreateRequest {
 
     @NotBlank(message = "Username không được để trống")
-    @Size(min = 3, max = 50, message = "Request không hợp lệ")
+    @Size(min = 3, max = 50, message = "Username phải từ 3 đến 50 ký tự")
     String username;
 
     @NotBlank(message = "Email không được để trống")
     @Email(message = "Email không hợp lệ")
     String email;
 
-    @NotBlank(message = "Mật khẩu không được để trống")
-    @Size(min = 6, message = "Mật khẩu quá ngắn")
+    // Tùy chọn: nếu để trống hệ thống sẽ tự sinh ngẫu nhiên 8 ký tự
     String password;
 
-    @NotBlank(message = "Fullname không được để trống")
+    @NotBlank(message = "Họ và tên không được để trống")
     String fullName;
 
-    // Optional: STUDENT, LECTURER (mac dinh: STUDENT)
+    // STUDENT hoặc LECTURER
+    @NotBlank(message = "Vai trò (roleCode) không được để trống")
     String roleCode;
 }

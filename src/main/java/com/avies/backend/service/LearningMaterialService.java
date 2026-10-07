@@ -25,4 +25,17 @@ public interface LearningMaterialService {
 
     @Transactional(readOnly = true)
     List<MaterialUploadResponse> getMaterialsBySubject(Long subjectId);
+
+    /**
+     * Xóa tài liệu: xóa file vật lý trên ổ đĩa + chunks trong DB + bản ghi LearningMaterial.
+     * Chỉ người upload hoặc Admin mới được xóa.
+     */
+    @Transactional
+    void deleteMaterial(Long materialId);
+
+    /**
+     * Cập nhật tiêu đề tài liệu (metadata only — không tái xử lý chunks).
+     */
+    @Transactional
+    MaterialUploadResponse updateMaterialTitle(Long materialId, String newTitle);
 }

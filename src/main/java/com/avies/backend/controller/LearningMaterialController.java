@@ -1,8 +1,10 @@
 package com.avies.backend.controller;
 
+import com.avies.backend.dto.request.MaterialUpdateRequest;
 import com.avies.backend.dto.response.ApiResponse;
 import com.avies.backend.dto.response.MaterialUploadResponse;
 import com.avies.backend.service.LearningMaterialService;
+import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -59,6 +61,43 @@ public class LearningMaterialController {
         List<MaterialUploadResponse> list = learningMaterialService.getMaterialsBySubject(subjectId);
         return ApiResponse.<List<MaterialUploadResponse>>builder()
                 .result(list)
+                .build();
+    }
+
+    /**
+     * Xóa tài liệu học tập (chỉ ADMIN):
+     * - Xóa file vật lý khỏi ổ đĩa
+     * - Xóa toàn bộ chunks & vectors trong DB (CASCADE)
+     */
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @DeleteMapping("/{materialId}")
+    public ApiResponse<Void> deleteMaterial(
+            @PathVariable("materialId") Long materialId
+    ) {
+        log.info("Nhận yêu cầu xóa tài liệu id={}", materialId);
+        learningMaterialService.deleteMaterial(materialId);
+        return ApiResponse.<Void>builder()
+                .code(1000)
+                .message("Tài liệu và toàn bộ dữ liệu vector đã được xóa thành công")
+                .build();
+    }
+
+    /**
+     * Cập nhật tiêu đề tài liệu (chỉ ADMIN — metadata only, không tái xử lý chunks).
+     * Body: { "title": "Tiêu đề mới" }
+     */
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PatchMapping("/{materialId}/title")
+    public ApiResponse<MaterialUploadResponse> updateMaterialTitle(
+            @PathVariable("materialId") Long materialId,
+            @RequestBody @Valid MaterialUpdateRequest request
+    ) {
+        log.info("Nhận yêu cầu cập nhật tiêu đề tài liệu id={}, tiêu đề mới='{}'", materialId, request.getTitle());
+        MaterialUploadResponse response = learningMaterialService.updateMaterialTitle(materialId, request.getTitle());
+        return ApiResponse.<MaterialUploadResponse>builder()
+                .code(1000)
+                .message("Cập nhật tiêu đề tài liệu thành công")
+                .result(response)
                 .build();
     }
 }

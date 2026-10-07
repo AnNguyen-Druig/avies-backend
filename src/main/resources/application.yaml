@@ -19,6 +19,24 @@ spring:
         format_sql: true
     show-sql: true
 
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:tuyetbang120407@gmail.com}
+    password: ${MAIL_PASSWORD:tuhtzfieioqebjmq}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+# Tắt kiểm tra sức khỏe Mail trong Actuator để tránh lỗi khi chưa cấu hình mật khẩu SMTP
+management:
+  health:
+    mail:
+      enabled: false
+
 # OpenAI Configuration for RAG & Embeddings
 openai:
   api-key: ${OPENAI_API_KEY:}

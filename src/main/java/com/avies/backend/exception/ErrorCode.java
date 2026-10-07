@@ -28,6 +28,7 @@ public enum ErrorCode {
     OPENAI_API_ERROR(1020, "Failed to generate embeddings via AI service", HttpStatus.INTERNAL_SERVER_ERROR),
     MATERIAL_NOT_EXISTED(1021, "Learning material not found", HttpStatus.NOT_FOUND),
     SUBJECT_EXISTED(1022, "Subject code already exists", HttpStatus.BAD_REQUEST),
+    ROLE_NOT_ALLOWED(1023, "Only STUDENT and LECTURER roles are allowed for registration", HttpStatus.BAD_REQUEST),
     /** Câu hỏi không tồn tại hoặc không nằm trong phạm vi được xem. */
     QUESTION_NOT_FOUND(1100, "Không tìm thấy câu hỏi", HttpStatus.NOT_FOUND),
     /** Người dùng không được quản lý câu hỏi trong môn học được chọn. */

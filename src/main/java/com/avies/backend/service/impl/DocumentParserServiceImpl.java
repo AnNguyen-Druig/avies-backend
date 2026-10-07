@@ -18,6 +18,7 @@ public class DocumentParserServiceImpl implements DocumentParserService {
 
     /**
      * Bóc tách toàn bộ nội dung text từ file tài liệu (PDF, Word, PPTX, TXT...) sử dụng Apache Tika.
+     * Chuyển đổi nội dung của các file trên thành dạng text 
      */
     public String extractText(MultipartFile file) {
         if (file == null || file.isEmpty()) {

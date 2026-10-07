@@ -215,6 +215,89 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
         return filename.substring(lastIndex + 1);
     }
 
+    /**
+     * Xóa tài liệu học tập:
+     * 1. Kiểm tra tài liệu tồn tại
+     * 2. Xóa chunks trong DB (đa số DB đã có ON DELETE CASCADE tự động)
+     * 3. Xóa bản ghi LearningMaterial
+     * 4. Xóa file vật lý trên ổ đĩa
+     */
+    @Transactional
+    public void deleteMaterial(Long materialId) {
+        // 1. Kiểm tra tài liệu
+        LearningMaterial material = learningMaterialRepository.findById(materialId)
+                .orElseThrow(() -> new AppException(ErrorCode.MATERIAL_NOT_EXISTED));
+
+        String physicalPath = material.getStoragePath();
+
+        // 2, 3. Xóa DB (chunks có ON DELETE CASCADE nên tự xóa theo)
+        learningMaterialRepository.delete(material);
+        log.info("Xóa LearningMaterial id={}", materialId);
+
+        // 4. Xóa file vật lý (thực hiện sau commit DB để đảm bảo DB thành công trước)
+        if (physicalPath != null) {
+            try {
+                Path filePath = Paths.get(physicalPath);
+                boolean deleted = Files.deleteIfExists(filePath);
+                if (deleted) {
+                    log.info("Xóa file vật lý thành công: {}", physicalPath);
+                } else {
+                    log.warn("File vật lý không tồn tại (bỏ qua): {}", physicalPath);
+                }
+            } catch (IOException e) {
+                // Không throw — DB đã xóa thành công, chỉ cần log cảnh báo
+                log.warn("Không xóa được file vật lý: {} — {}", physicalPath, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Cập nhật tiêu đề tài liệu:
+     * - Chỉ ADMIN mới có quyền chỉnh sửa tài liệu (không cho lecturer).
+     * - Không cần kiểm tra isOwner (người upload).
+     */
+    @Transactional
+    public MaterialUploadResponse updateMaterialTitle(Long materialId, String newTitle) {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+
+        User currentUser = userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+
+        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getCode());
+        if (!isAdmin) {
+            throw new AppException(ErrorCode.UNAUTHORIZED, "Chỉ quản trị viên (ADMIN) mới có quyền chỉnh sửa tài liệu");
+        }
+
+        LearningMaterial material = learningMaterialRepository.findById(materialId)
+                .orElseThrow(() -> new AppException(ErrorCode.MATERIAL_NOT_EXISTED));
+
+        if (newTitle == null || newTitle.isBlank()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+
+        material.setTitle(newTitle.trim());
+        material = learningMaterialRepository.save(material);
+        log.info("Cập nhật tiêu đề Material id={} thành '{}'", materialId, material.getTitle());
+
+        Subject subject = material.getSubject();
+        return MaterialUploadResponse.builder()
+                .id(material.getId())
+                .subjectId(subject.getId())
+                .subjectCode(subject.getCode())
+                .subjectName(subject.getName())
+                .title(material.getTitle())
+                .fileName(material.getFileName())
+                .storagePath(material.getStoragePath())
+                .mimeType(material.getMimeType())
+                .processingStatus(material.getProcessingStatus())
+                .uploadedBy(material.getUploadedBy() != null ? material.getUploadedBy().getFullName() : null)
+                .createdAt(material.getCreatedAt())
+                .build();
+    }
+
     @Transactional(readOnly = true)
     public List<MaterialUploadResponse> getMaterialsBySubject(Long subjectId) {
         Subject subject = subjectRepository.findById(subjectId)

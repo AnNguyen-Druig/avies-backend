@@ -23,4 +23,6 @@ public class UserUpdateRequest {
 
     @Size(max = 50, message = "Mã quyền tối đa 50 ký tự")
     String roleCode;
+
+    String password;
 }

@@ -1,5 +1,6 @@
 package com.avies.backend.controller;
 
+import com.avies.backend.dto.request.UserCreateRequest;
 import com.avies.backend.dto.request.UserUpdateRequest;
 import com.avies.backend.dto.response.ApiResponse;
 import com.avies.backend.dto.response.UserResponse;
@@ -27,7 +28,7 @@ public class UserController {
     /**
      * Lấy thông tin user hiện tại đang đăng nhập từ SecurityContext
      */
-    @GetMapping("/my-info")
+    @GetMapping("/myInfo")
     public ApiResponse<UserResponse> getMyInfo() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return ApiResponse.<UserResponse>builder()
@@ -47,10 +48,21 @@ public class UserController {
     }
 
     /**
+     * Tạo tài khoản mới bởi ADMIN (chỉ cho phép role STUDENT hoặc LECTURER)
+     */
+    @PostMapping("/create")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ApiResponse<UserResponse> createUser(@Valid @RequestBody UserCreateRequest request) {
+        return ApiResponse.<UserResponse>builder()
+                .result(userService.createUser(request))
+                .build();
+    }
+
+    /**
      * Update thông tin User
      */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ApiResponse<UserResponse> updateUser(@PathVariable Long id, @Valid @RequestBody UserUpdateRequest request) {
         return ApiResponse.<UserResponse>builder()
                 .result(userService.updateUser(id, request))
