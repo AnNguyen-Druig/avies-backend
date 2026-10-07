@@ -28,18 +28,16 @@ public enum ErrorCode {
     OPENAI_API_ERROR(1020, "Failed to generate embeddings via AI service", HttpStatus.INTERNAL_SERVER_ERROR),
     MATERIAL_NOT_EXISTED(1021, "Learning material not found", HttpStatus.NOT_FOUND),
     SUBJECT_EXISTED(1022, "Subject code already exists", HttpStatus.BAD_REQUEST),
+<<<<<<< HEAD
     ROLE_NOT_ALLOWED(1023, "Only STUDENT and LECTURER roles are allowed for registration", HttpStatus.BAD_REQUEST),
     /** Câu hỏi không tồn tại hoặc không nằm trong phạm vi được xem. */
+=======
+>>>>>>> 4a4d0ba90166794bace66eba8761b85e25dd0b56
     QUESTION_NOT_FOUND(1100, "Không tìm thấy câu hỏi", HttpStatus.NOT_FOUND),
-    /** Người dùng không được quản lý câu hỏi trong môn học được chọn. */
     SUBJECT_NOT_ASSIGNED(1101, "Bạn chưa được phân công môn học này", HttpStatus.FORBIDDEN),
-    /** Chỉ bản nháp chưa lưu trữ mới được sửa hoặc xóa bằng CRUD. */
     QUESTION_NOT_EDITABLE(1102, "Chỉ được sửa hoặc xóa bản nháp chưa lưu trữ", HttpStatus.CONFLICT),
-    /** Câu hỏi đang được bài thi sử dụng nên cần bảo toàn nội dung. */
     QUESTION_IN_USE(1103, "Câu hỏi đã được sử dụng trong bài thi", HttpStatus.CONFLICT),
-    /** Người dùng cập nhật từ một phiên bản đã cũ. */
     QUESTION_VERSION_CONFLICT(1104, "Câu hỏi đã thay đổi; hãy tải lại trước khi thao tác", HttpStatus.CONFLICT),
-    /** Ràng buộc dữ liệu ngăn thao tác hoàn tất. */
     QUESTION_DATA_CONFLICT(1105, "Dữ liệu đang được tham chiếu hoặc có thao tác đồng thời", HttpStatus.CONFLICT);
 
 
