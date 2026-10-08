@@ -28,11 +28,8 @@ public enum ErrorCode {
     OPENAI_API_ERROR(1020, "Failed to generate embeddings via AI service", HttpStatus.INTERNAL_SERVER_ERROR),
     MATERIAL_NOT_EXISTED(1021, "Learning material not found", HttpStatus.NOT_FOUND),
     SUBJECT_EXISTED(1022, "Subject code already exists", HttpStatus.BAD_REQUEST),
-<<<<<<< HEAD
     ROLE_NOT_ALLOWED(1023, "Only STUDENT and LECTURER roles are allowed for registration", HttpStatus.BAD_REQUEST),
     /** Câu hỏi không tồn tại hoặc không nằm trong phạm vi được xem. */
-=======
->>>>>>> 4a4d0ba90166794bace66eba8761b85e25dd0b56
     QUESTION_NOT_FOUND(1100, "Không tìm thấy câu hỏi", HttpStatus.NOT_FOUND),
     SUBJECT_NOT_ASSIGNED(1101, "Bạn chưa được phân công môn học này", HttpStatus.FORBIDDEN),
     QUESTION_NOT_EDITABLE(1102, "Chỉ được sửa hoặc xóa bản nháp chưa lưu trữ", HttpStatus.CONFLICT),
