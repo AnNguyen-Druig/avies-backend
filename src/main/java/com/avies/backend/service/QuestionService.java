@@ -6,7 +6,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 
 /**
- * Hợp đồng CRUD câu hỏi, không bao gồm thao tác duyệt hoặc tích hợp AI.
+ * Hợp đồng CRUD câu hỏi, bao gồm thao tác duyệt hoặc tích hợp AI.
  */
 public interface QuestionService {
     /**

@@ -8,6 +8,16 @@ import java.util.List;
 
 public interface LearningMaterialChunkRepository extends JpaRepository<LearningMaterialChunk, Long> {
 
+    /**
+     * Projection ánh xạ kết quả truy vấn Cosine Similarity trên pgvector.
+     * Tránh load column embedding (vector binary) vào JPA entity gây lỗi ép kiểu JDBC PGobject.
+     */
+    interface ChunkView {
+        Long getId();
+        String getContent();
+        String getMaterialTitle();
+    }
+
     // Query Cosine Similarity dựa trên toán tử <=> của pgvector, chỉ lấy các cột cần thiết cho Context RAG
     @Query(value = """
             SELECT c.id AS id, c.content AS content, m.title AS materialTitle
@@ -17,7 +27,7 @@ public interface LearningMaterialChunkRepository extends JpaRepository<LearningM
             ORDER BY c.embedding <=> CAST(:queryEmbedding AS public.vector)
             LIMIT :topK
             """, nativeQuery = true)
-    List<LearningMaterialChunkProjection> searchSimilarChunks(
+    List<ChunkView> searchSimilarChunks(
             @Param("subjectId") Long subjectId,
             @Param("queryEmbedding") String queryEmbedding,
             @Param("topK") int topK
@@ -31,7 +41,7 @@ public interface LearningMaterialChunkRepository extends JpaRepository<LearningM
             ORDER BY c.embedding <=> CAST(:queryEmbedding AS public.vector)
             LIMIT :topK
             """, nativeQuery = true)
-    List<LearningMaterialChunkProjection> searchSimilarChunksByMaterialIds(
+    List<ChunkView> searchSimilarChunksByMaterialIds(
             @Param("subjectId") Long subjectId,
             @Param("materialIds") List<Long> materialIds,
             @Param("queryEmbedding") String queryEmbedding,

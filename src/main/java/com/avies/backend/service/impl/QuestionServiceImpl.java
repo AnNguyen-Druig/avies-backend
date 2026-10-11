@@ -315,7 +315,7 @@ public class QuestionServiceImpl implements QuestionService {
         String vectorString = Arrays.toString(embeddings.get(0));
 
         // 2. Tìm kiếm 5 đoạn tài liệu liên quan nhất qua Cosine Distance
-        List<LearningMaterialChunkProjection> chunks;
+        List<LearningMaterialChunkRepository.ChunkView> chunks;
         if (request.getMaterialIds() != null && !request.getMaterialIds().isEmpty()) {
             chunks = chunkRepository.searchSimilarChunksByMaterialIds(subject.getId(), request.getMaterialIds(), vectorString, 5);
         } else {
@@ -329,7 +329,7 @@ public class QuestionServiceImpl implements QuestionService {
         // 3. Ghép context từ 5 đoạn tài liệu
         StringBuilder contextBuilder = new StringBuilder();
         for (int i = 0; i < chunks.size(); i++) {
-            LearningMaterialChunkProjection chunk = chunks.get(i);
+            LearningMaterialChunkRepository.ChunkView chunk = chunks.get(i);
             String docTitle = (chunk.getMaterialTitle() != null && !chunk.getMaterialTitle().isBlank())
                     ? chunk.getMaterialTitle()
                     : "Tài liệu môn học";

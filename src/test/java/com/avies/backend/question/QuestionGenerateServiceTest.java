@@ -99,7 +99,7 @@ class QuestionGenerateServiceTest {
         when(openAiEmbeddingService.generateEmbeddings(List.of("Cây nhị phân"))).thenReturn(List.of(vector));
 
         // Mock chunks từ DB
-        LearningMaterialChunkProjection chunk1 = mock(LearningMaterialChunkProjection.class);
+        LearningMaterialChunkRepository.ChunkView chunk1 = mock(LearningMaterialChunkRepository.ChunkView.class);
         when(chunk1.getMaterialTitle()).thenReturn("Giáo trình Cấu trúc dữ liệu");
         when(chunk1.getContent()).thenReturn("Cây nhị phân là cây trong đó mỗi nút có tối đa hai nút con.");
         when(chunkRepository.searchSimilarChunks(eq(subject.getId()), anyString(), eq(5)))
