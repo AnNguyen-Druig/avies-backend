@@ -8,17 +8,19 @@ import jakarta.validation.constraints.Positive;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.util.List;
 
 /**
  * API CRUD câu hỏi dành cho admin và giảng viên; nghiệp vụ duyệt được tách riêng.
  */
 @RestController
-@RequestMapping("/questions")
+@RequestMapping({"/questions"})
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_LECTURER')")
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -28,6 +30,20 @@ public class QuestionController {
      * Dịch vụ nghiệp vụ của ngân hàng câu hỏi.
      */
     QuestionService questionService;
+
+    /**
+     * Sinh câu hỏi vấn đáp tự động bằng AI từ tài liệu môn học qua RAG.
+     * Hỗ trợ POST /questions/generate.
+     */
+    @PostMapping("/generate")
+    public ResponseEntity<ApiResponse<List<QuestionResponse>>> generate(@Valid @RequestBody QuestionGenerateRequest request) {
+        List<QuestionResponse> questions = questionService.generateQuestions(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.<List<QuestionResponse>>builder()
+                        .message("Sinh câu hỏi và rubric thành công.")
+                        .result(questions)
+                        .build());
+    }
 
     /**
      * Tạo câu hỏi thủ công và trả vị trí tài nguyên vừa tạo.

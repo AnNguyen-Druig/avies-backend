@@ -92,8 +92,7 @@ class QuestionControllerTest {
             "{\"subjectId\":0,\"content\":\"Câu hỏi\"}",
             "{\"subjectId\":1,\"content\":\"Câu hỏi\",\"answerTimeLimitSeconds\":0}",
             "{\"subjectId\":1,\"content\":\"Câu hỏi\",\"topics\":[null]}",
-            "{\"subjectId\":1,\"content\":\"Câu hỏi\",\"topics\":null}",
-            "{\"subjectId\":1,\"content\":\"Câu hỏi\",\"bloomLevel\":\"CREATE\"}",
+            "{\"subjectId\":1,\"content\":\"Câu hỏi\",\"bloomLevel\":\"INVALID_LEVEL\"}",
             "{\"subjectId\":1,\"content\":\"Câu hỏi\",\"status\":\"APPROVED\"}",
             "{\"subjectId\":1,\"content\":\"Câu hỏi\",\"createdById\":99}",
             "{\"subjectId\":1,\"content\":\"Câu hỏi\",\"sourceType\":\"AI\"}", "{invalid"
@@ -192,5 +191,64 @@ class QuestionControllerTest {
         MvcResult result = mvc.perform(get("/questions/7").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isInternalServerError()).andReturn();
         assertThat(result.getResponse().getContentAsString()).doesNotContain("SECRET_SQL_DETAIL");
+    }
+
+    /** POST /questions/generate sinh câu hỏi thành công trả về HTTP 201 và danh sách câu hỏi kèm rubric. */
+    @Test
+    void generateQuestionsReturns201AndResult() throws Exception {
+        when(service.generateQuestions(any())).thenReturn(List.of(
+                QuestionResponse.builder().id(101L).content("Câu hỏi RAG sinh tự động").build()
+        ));
+
+        mvc.perform(post("/questions/generate")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_LECTURER")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "subjectId": 1,
+                                  "keyword": "Cây nhị phân",
+                                  "bloomLevel": "APPLY",
+                                  "count": 1
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.result[0].id").value(101))
+                .andExpect(jsonPath("$.result[0].content").value("Câu hỏi RAG sinh tự động"));
+    }
+
+    /** POST /questions/generate với body không hợp lệ trả về HTTP 400. */
+    @Test
+    void generateQuestionsWithInvalidBodyReturns400() throws Exception {
+        mvc.perform(post("/questions/generate")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_LECTURER")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "subjectId": null,
+                                  "keyword": ""
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
+    /** POST /questions/generate với bloomLevel không hợp lệ trả về thông báo lỗi cụ thể cho 6 level. */
+    @Test
+    void generateQuestionsWithInvalidBloomLevelReturnsSpecificError() throws Exception {
+        mvc.perform(post("/questions/generate")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_LECTURER")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "subjectId": 1,
+                                  "keyword": "Cây nhị phân",
+                                  "bloomLevel": "HAHA",
+                                  "count": 1
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1002))
+                .andExpect(jsonPath("$.message").value("Mức độ nhận thức (bloomLevel) không hợp lệ; bloomLevel phải nằm trong 6 level: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE và CREATE."));
+        verifyNoInteractions(service);
     }
 }

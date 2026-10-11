@@ -44,6 +44,21 @@ import java.util.Map;
         AuthenticationServiceImpl.class, SecurityConfig.class, CorsProperties.class,
         CustomJwtDecoder.class, QuestionExceptionHandler.class, GlobalExceptionHandler.class})
 public class QuestionPostgresConfig {
+    @Bean
+    com.avies.backend.service.OpenAiEmbeddingService openAiEmbeddingService() {
+        return org.mockito.Mockito.mock(com.avies.backend.service.OpenAiEmbeddingService.class);
+    }
+
+    @Bean
+    com.avies.backend.repository.LearningMaterialChunkRepository chunkRepository() {
+        return org.mockito.Mockito.mock(com.avies.backend.repository.LearningMaterialChunkRepository.class);
+    }
+
+    @Bean
+    com.avies.backend.service.AiQuestionGenerationService aiQuestionGenerationService() {
+        return org.mockito.Mockito.mock(com.avies.backend.service.AiQuestionGenerationService.class);
+    }
+
     /** Digest cố định để các thành viên chạy cùng PostgreSQL 17/pgvector, không bị tag thay đổi âm thầm. */
     private static final String POSTGRES_IMAGE = "pgvector/pgvector:pg17@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d";
 

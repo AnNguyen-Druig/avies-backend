@@ -1,11 +1,14 @@
 package com.avies.backend.service.impl;
 
+import com.avies.backend.dto.ai.GeneratedQuestionDto;
 import com.avies.backend.dto.request.*;
 import com.avies.backend.dto.response.*;
 import com.avies.backend.entity.*;
 import com.avies.backend.entity.enums.*;
 import com.avies.backend.exception.*;
 import com.avies.backend.repository.*;
+import com.avies.backend.service.AiQuestionGenerationService;
+import com.avies.backend.service.OpenAiEmbeddingService;
 import com.avies.backend.service.QuestionService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -55,6 +59,21 @@ public class QuestionServiceImpl implements QuestionService {
      * Kho nhật ký được ghi trong cùng transaction với câu hỏi.
      */
     QuestionAuditLogRepository auditRepository;
+
+    /**
+     * Dịch vụ sinh vector embeddings từ OpenAI.
+     */
+    OpenAiEmbeddingService openAiEmbeddingService;
+
+    /**
+     * Kho lưu trữ các đoạn tài liệu học tập (chunks) phục vụ RAG qua pgvector.
+     */
+    LearningMaterialChunkRepository chunkRepository;
+
+    /**
+     * Dịch vụ gọi LLM (GPT-4o / Gemini) sinh câu hỏi vấn đáp và rubric.
+     */
+    AiQuestionGenerationService aiQuestionGenerationService;
 
     /**
      * Tạo bản nháp thủ công và nhật ký, không cho request quyết định tác giả hoặc trạng thái.
@@ -268,6 +287,155 @@ public class QuestionServiceImpl implements QuestionService {
     /**
      * Ghi nhật ký cùng transaction để không tồn tại sự kiện của thao tác đã rollback.
      */
+    /**
+     * Quy trình sinh câu hỏi vấn đáp tự động bằng AI (RAG):
+     * 1. Xác thực giảng viên và môn học được phân công.
+     * 2. Gọi OpenAiEmbeddingService chuyển từ khóa thành vector 1536 chiều.
+     * 3. Tìm 5 đoạn tài liệu tương đồng nhất qua Cosine Distance (<=> pgvector).
+     * 4. Đưa Context + Prompt vào GPT-4o (hoặc Gemini) sinh câu hỏi và rubric cấu trúc JSON.
+     * 5. Lưu câu hỏi & Rubric vào database dưới trạng thái DRAFT.
+     * 6. Ghi nhật ký audit và trả về kết quả.
+     */
+    @Override
+    @Transactional
+    public List<QuestionResponse> generateQuestions(QuestionGenerateRequest request) {
+        User actor = currentActor();
+        requireAssignment(actor, request.getSubjectId());
+        Subject subject = subjectRepository.findById(request.getSubjectId())
+                .orElseThrow(() -> new AppException(ErrorCode.SUBJECT_NOT_EXISTED));
+
+        String keyword = requiredContent(request.getKeyword());
+        int count = (request.getCount() != null && request.getCount() > 0) ? Math.min(request.getCount(), 10) : 1;
+
+        // 1. Chuyển đổi keyword thành vector embeddings
+        List<float[]> embeddings = openAiEmbeddingService.generateEmbeddings(List.of(keyword));
+        if (embeddings == null || embeddings.isEmpty()) {
+            throw new AppException(ErrorCode.OPENAI_API_ERROR);
+        }
+        String vectorString = Arrays.toString(embeddings.get(0));
+
+        // 2. Tìm kiếm 5 đoạn tài liệu liên quan nhất qua Cosine Distance
+        List<LearningMaterialChunkProjection> chunks;
+        if (request.getMaterialIds() != null && !request.getMaterialIds().isEmpty()) {
+            chunks = chunkRepository.searchSimilarChunksByMaterialIds(subject.getId(), request.getMaterialIds(), vectorString, 5);
+        } else {
+            chunks = chunkRepository.searchSimilarChunks(subject.getId(), vectorString, 5);
+        }
+
+        if (chunks == null || chunks.isEmpty()) {
+            throw new AppException(ErrorCode.NO_RELEVANT_MATERIALS, "Không tìm thấy tài liệu phù hợp trong môn học để sinh câu hỏi.");
+        }
+
+        // 3. Ghép context từ 5 đoạn tài liệu
+        StringBuilder contextBuilder = new StringBuilder();
+        for (int i = 0; i < chunks.size(); i++) {
+            LearningMaterialChunkProjection chunk = chunks.get(i);
+            String docTitle = (chunk.getMaterialTitle() != null && !chunk.getMaterialTitle().isBlank())
+                    ? chunk.getMaterialTitle()
+                    : "Tài liệu môn học";
+            contextBuilder.append(String.format("--- Đoạn %d (Tài liệu: %s) ---\n%s\n\n",
+                    i + 1, docTitle, chunk.getContent()));
+        }
+
+        // 4. Gọi AI sinh câu hỏi và rubric
+        List<GeneratedQuestionDto> generatedDtos = aiQuestionGenerationService.generateQuestions(
+                subject.getName(),
+                keyword,
+                contextBuilder.toString(),
+                request.getBloomLevel(),
+                count
+        );
+
+        if (generatedDtos == null || generatedDtos.isEmpty()) {
+            throw new AppException(ErrorCode.AI_GENERATION_FAILED);
+        }
+
+        // 5. Lưu câu hỏi & Rubric vào database với trạng thái DRAFT
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<QuestionResponse> results = new ArrayList<>();
+
+        for (GeneratedQuestionDto dto : generatedDtos) {
+            String content = requiredContent(dto.getContent());
+            String referenceAnswer = optionalText(dto.getReferenceAnswer());
+            BloomLevel bloom = (dto.getBloomLevel() != null)
+                    ? dto.getBloomLevel()
+                    : (request.getBloomLevel() != null ? request.getBloomLevel() : BloomLevel.UNDERSTAND);
+
+            Set<String> topicsToSave = new LinkedHashSet<>();
+            topicsToSave.add(keyword);
+            if (dto.getTopics() != null) {
+                topicsToSave.addAll(dto.getTopics());
+            }
+            Set<String> normalizedTopics = normalizeTopics(topicsToSave);
+
+            Integer timeLimit = (dto.getAnswerTimeLimitSeconds() != null && dto.getAnswerTimeLimitSeconds() > 0)
+                    ? dto.getAnswerTimeLimitSeconds()
+                    : 120;
+
+            Question question = Question.builder()
+                    .subject(subject)
+                    .createdBy(actor)
+                    .updatedBy(actor)
+                    .content(content)
+                    .referenceAnswer(referenceAnswer)
+                    .topics(normalizedTopics)
+                    .bloomLevel(bloom)
+                    .answerTimeLimitSeconds(timeLimit)
+                    .sourceType(QuestionSourceType.AI)
+                    .status(QuestionStatus.DRAFT)
+                    .isAiGenerated(true)
+                    .isApproved(false)
+                    .createdAt(now)
+                    .updatedAt(now)
+                    .build();
+
+            // Gắn Rubric và các tiêu chí
+            GeneratedQuestionDto.GeneratedRubricDto rubricDto = dto.getRubric();
+            String rubricTitle = (rubricDto != null && rubricDto.getTitle() != null && !rubricDto.getTitle().isBlank())
+                    ? rubricDto.getTitle()
+                    : "Rubric đánh giá câu hỏi: " + keyword;
+            String rubricDesc = (rubricDto != null && rubricDto.getDescription() != null)
+                    ? rubricDto.getDescription()
+                    : "Thang điểm 10 đánh giá câu trả lời vấn đáp của sinh viên.";
+
+            Rubric rubric = Rubric.builder()
+                    .question(question)
+                    .title(rubricTitle)
+                    .description(rubricDesc)
+                    .createdAt(now)
+                    .build();
+
+            if (rubricDto != null && rubricDto.getCriteria() != null && !rubricDto.getCriteria().isEmpty()) {
+                int order = 1;
+                for (GeneratedQuestionDto.GeneratedCriterionDto cDto : rubricDto.getCriteria()) {
+                    RubricCriterion criterion = RubricCriterion.builder()
+                            .rubric(rubric)
+                            .criterionText(requiredContent(cDto.getCriterionText()))
+                            .pointWeight(cDto.getPointWeight() != null ? cDto.getPointWeight() : new BigDecimal("2.50"))
+                            .isMandatory(cDto.getIsMandatory() != null ? cDto.getIsMandatory() : false)
+                            .displayOrder(cDto.getDisplayOrder() != null && cDto.getDisplayOrder() > 0 ? cDto.getDisplayOrder() : order++)
+                            .build();
+                    rubric.getCriteria().add(criterion);
+                }
+            } else {
+                rubric.getCriteria().add(RubricCriterion.builder().rubric(rubric).criterionText("Hiểu đúng định nghĩa và khái niệm cơ bản").pointWeight(new BigDecimal("4.00")).isMandatory(false).displayOrder(1).build());
+                rubric.getCriteria().add(RubricCriterion.builder().rubric(rubric).criterionText("Phân tích cơ chế và giải thích chi tiết").pointWeight(new BigDecimal("4.00")).isMandatory(false).displayOrder(2).build());
+                rubric.getCriteria().add(RubricCriterion.builder().rubric(rubric).criterionText("Kỹ năng diễn đạt và phản biện vấn đáp").pointWeight(new BigDecimal("2.00")).isMandatory(false).displayOrder(3).build());
+            }
+
+            question.setRubric(rubric);
+
+            questionRepository.saveAndFlush(question);
+            audit(question, actor, "CREATED");
+            results.add(toResponse(question));
+        }
+
+        return results;
+    }
+
+    /**
+     * Ghi nhật ký cùng transaction để không tồn tại sự kiện của thao tác đã rollback.
+     */
     private void audit(Question question, User actor, String action) {
         auditRepository.save(QuestionAuditLog.builder().questionId(question.getId()).actor(actor)
                 .action(action).occurredAt(OffsetDateTime.now(ZoneOffset.UTC)).build());
@@ -277,6 +445,28 @@ public class QuestionServiceImpl implements QuestionService {
      * Ánh xạ tường minh nhằm tránh lộ thuộc tính nhạy cảm hoặc vòng tham chiếu entity.
      */
     private QuestionResponse toResponse(Question question) {
+        RubricResponse rubricResponse = null;
+        if (question.getRubric() != null) {
+            Rubric r = question.getRubric();
+            List<RubricCriterionResponse> criteriaResponses = (r.getCriteria() == null) ? Collections.emptyList()
+                    : r.getCriteria().stream().map(c -> RubricCriterionResponse.builder()
+                    .id(c.getId())
+                    .criterionText(c.getCriterionText())
+                    .pointWeight(c.getPointWeight())
+                    .isMandatory(c.getIsMandatory())
+                    .displayOrder(c.getDisplayOrder())
+                    .build()).toList();
+
+            rubricResponse = RubricResponse.builder()
+                    .id(r.getId())
+                    .questionId(question.getId())
+                    .title(r.getTitle())
+                    .description(r.getDescription())
+                    .criteria(criteriaResponses)
+                    .createdAt(r.getCreatedAt())
+                    .build();
+        }
+
         return QuestionResponse.builder().id(question.getId())
                 .subjectId(question.getSubject().getId()).subjectName(question.getSubject().getName())
                 .content(question.getContent()).referenceAnswer(question.getReferenceAnswer())
@@ -287,7 +477,8 @@ public class QuestionServiceImpl implements QuestionService {
                 .updatedById(question.getUpdatedBy() == null ? null : question.getUpdatedBy().getId())
                 .createdAt(question.getCreatedAt()).updatedAt(question.getUpdatedAt())
                 .archivedAt(question.getArchivedAt()).version(question.getVersion())
-                .rubricId(question.getRubric() == null ? null : question.getRubric().getId()).build();
+                .rubricId(question.getRubric() == null ? null : question.getRubric().getId())
+                .rubric(rubricResponse).build();
     }
 
     /**

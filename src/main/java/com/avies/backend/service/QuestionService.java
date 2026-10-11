@@ -33,4 +33,11 @@ public interface QuestionService {
      * Xóa bản nháp chưa được sử dụng; gọi lại khi đã xóa không tạo tác dụng phụ.
      */
     void deleteQuestion(@Positive Long id);
+
+    /**
+     * Sinh câu hỏi vấn đáp tự động bằng AI từ tài liệu môn học qua RAG,
+     * đổi keyword thành vector, tìm 5 đoạn tài liệu liên quan nhất qua cosine distance,
+     * gọi GPT-4o/Gemini và lưu câu hỏi & rubric dưới trạng thái DRAFT.
+     */
+    java.util.List<QuestionResponse> generateQuestions(@Valid QuestionGenerateRequest request);
 }

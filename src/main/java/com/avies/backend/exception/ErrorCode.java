@@ -29,6 +29,8 @@ public enum ErrorCode {
     MATERIAL_NOT_EXISTED(1021, "Learning material not found", HttpStatus.NOT_FOUND),
     SUBJECT_EXISTED(1022, "Subject code already exists", HttpStatus.BAD_REQUEST),
     ROLE_NOT_ALLOWED(1023, "Only STUDENT and LECTURER roles are allowed for registration", HttpStatus.BAD_REQUEST),
+    NO_RELEVANT_MATERIALS(1024, "Môn học chưa có tài liệu học tập sẵn sàng để sinh câu hỏi", HttpStatus.BAD_REQUEST),
+    AI_GENERATION_FAILED(1025, "Không thể sinh câu hỏi từ dịch vụ AI", HttpStatus.INTERNAL_SERVER_ERROR),
     /** Câu hỏi không tồn tại hoặc không nằm trong phạm vi được xem. */
     QUESTION_NOT_FOUND(1100, "Không tìm thấy câu hỏi", HttpStatus.NOT_FOUND),
     SUBJECT_NOT_ASSIGNED(1101, "Bạn chưa được phân công môn học này", HttpStatus.FORBIDDEN),

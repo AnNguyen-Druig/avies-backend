@@ -48,9 +48,15 @@ management:
 
 # OpenAI Configuration for RAG & Embeddings
 openai:
-  api-key: ${OPENAI_API_KEY:}
+  api-key: ${OPENAI_API_KEY:your_placeholder_here}
   base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
   embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+  chat-model: ${OPENAI_CHAT_MODEL:gpt-4o}
+
+# Gemini Configuration (tùy chọn hoặc dự phòng)
+gemini:
+  api-key: ${GEMINI_API_KEY:your_placeholder_here}
+  model: ${GEMINI_MODEL:gemini-3.8-flash}
 
 # Storage Configuration
 storage:

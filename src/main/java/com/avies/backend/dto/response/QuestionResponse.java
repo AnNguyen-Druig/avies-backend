@@ -102,4 +102,9 @@ public class QuestionResponse {
      * Rubric riêng của câu hỏi hoặc null nếu chưa có.
      */
     private final Long rubricId;
+
+    /**
+     * Thông tin chi tiết rubric và các tiêu chí chấm điểm đi kèm.
+     */
+    private final RubricResponse rubric;
 }

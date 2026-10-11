@@ -26,6 +26,21 @@ import java.util.UUID;
                 pattern = ".*(LearningMaterial|InvalidatedToken|RefreshToken).*"))
 @Import(QuestionServiceImpl.class)
 public class QuestionPersistenceTestConfig {
+    @Bean
+    com.avies.backend.service.OpenAiEmbeddingService openAiEmbeddingService() {
+        return org.mockito.Mockito.mock(com.avies.backend.service.OpenAiEmbeddingService.class);
+    }
+
+    @Bean
+    com.avies.backend.repository.LearningMaterialChunkRepository chunkRepository() {
+        return org.mockito.Mockito.mock(com.avies.backend.repository.LearningMaterialChunkRepository.class);
+    }
+
+    @Bean
+    com.avies.backend.service.AiQuestionGenerationService aiQuestionGenerationService() {
+        return org.mockito.Mockito.mock(com.avies.backend.service.AiQuestionGenerationService.class);
+    }
+
     /** Tạo nguồn dữ liệu tạm chỉ tồn tại trong tiến trình test. */
     @Bean
     DataSource dataSource() {
