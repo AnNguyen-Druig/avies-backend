@@ -5,6 +5,10 @@ import com.avies.backend.dto.request.SubjectUpdateRequest;
 import com.avies.backend.dto.response.ApiResponse;
 import com.avies.backend.dto.response.SubjectResponse;
 import com.avies.backend.service.SubjectService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @Slf4j
+@Tag(name = "Subjects", description = "Quan ly mon hoc: tao, xem, cap nhat, xoa")
 @RestController
 @RequestMapping("/subjects")
 @RequiredArgsConstructor
@@ -24,71 +29,82 @@ public class SubjectController {
 
     SubjectService subjectService;
 
-    /**
-     * Tạo môn học mới (dành cho Admin / Giảng viên)
-     */
+    @Operation(summary = "Tao mon hoc moi", description = "Admin hoac Giang vien tao mon hoc moi vao he thong")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Tao thanh cong"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Ma mon hoc da ton tai"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen")
+    })
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_LECTURER')")
     @PostMapping
     public ApiResponse<SubjectResponse> createSubject(@Valid @RequestBody SubjectCreationRequest request) {
-        log.info("Nhận yêu cầu tạo môn học mới: code={}", request.getCode());
+        log.info("Nhan yeu cau tao mon hoc moi: code={}", request.getCode());
         SubjectResponse response = subjectService.createSubject(request);
-
         return ApiResponse.<SubjectResponse>builder()
                 .code(1000)
-                .message("Tạo môn học thành công")
+                .message("Tao mon hoc thanh cong")
                 .result(response)
                 .build();
     }
 
-    /**
-     * Lấy danh sách môn học để hiển thị dropdown cho Giảng viên chọn khi upload tài liệu
-     */
+    @Operation(summary = "Lay danh sach tat ca mon hoc", description = "Tra ve toan bo danh sach mon hoc cho dropdown UI")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Danh sach mon hoc")
+    })
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_LECTURER', 'ROLE_STUDENT')")
     @GetMapping
     public ApiResponse<List<SubjectResponse>> getAllSubjects() {
         List<SubjectResponse> subjects = subjectService.getAllSubjects();
-
         return ApiResponse.<List<SubjectResponse>>builder()
                 .code(1000)
                 .result(subjects)
                 .build();
     }
 
-    /**
-     * Lấy chi tiết môn học theo ID
-     */
+    @Operation(summary = "Lay chi tiet mon hoc", description = "Tra cuu thong tin mon hoc theo ID")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Thong tin mon hoc"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Khong tim thay mon hoc")
+    })
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_LECTURER', 'ROLE_STUDENT')")
     @GetMapping("/{id}")
-    public ApiResponse<SubjectResponse> getSubjectById(@PathVariable("id") Long id) {
+    public ApiResponse<SubjectResponse> getSubjectById(
+            @Parameter(description = "ID mon hoc") @PathVariable("id") Long id) {
         SubjectResponse response = subjectService.getSubjectById(id);
-
         return ApiResponse.<SubjectResponse>builder()
                 .code(1000)
                 .result(response)
                 .build();
     }
 
-    /**
-     * Update môn học theo ID
-     */
+    @Operation(summary = "Cap nhat mon hoc", description = "Admin hoac Giang vien cap nhat thong tin mon hoc")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Cap nhat thanh cong"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Khong tim thay mon hoc")
+    })
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_LECTURER')")
-    public ApiResponse<SubjectResponse> updateSubject(@PathVariable Long id, @Valid @RequestBody SubjectUpdateRequest request) {
+    public ApiResponse<SubjectResponse> updateSubject(
+            @Parameter(description = "ID mon hoc") @PathVariable Long id,
+            @Valid @RequestBody SubjectUpdateRequest request) {
         return ApiResponse.<SubjectResponse>builder()
                 .code(1000)
                 .result(subjectService.updateSubject(id, request))
                 .build();
     }
 
-    /**
-     * Xóa môn học theo ID
-     */
+    @Operation(summary = "Xoa mon hoc", description = "Xoa mon hoc khoi he thong (chi Admin hoac Giang vien)")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Xoa thanh cong"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Khong tim thay mon hoc")
+    })
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_LECTURER')")
-    public ApiResponse<String> deleteSubject(@PathVariable Long id) {
+    public ApiResponse<String> deleteSubject(
+            @Parameter(description = "ID mon hoc") @PathVariable Long id) {
         subjectService.deleteSubject(id);
         return ApiResponse.<String>builder()
-                .result("Xóa môn học thành công")
+                .result("Xoa mon hoc thanh cong")
                 .build();
     }
 }
