@@ -28,7 +28,7 @@ class AviesBackendApplicationTests {
     private com.avies.backend.service.TextChunkingService textChunkingService;
 
     @Autowired
-    private com.avies.backend.service.OpenAiEmbeddingService openAiEmbeddingService;
+    private com.avies.backend.service.EmbeddingService openAiEmbeddingService;
 
     @Test
     void testChunkVectorOperations() {

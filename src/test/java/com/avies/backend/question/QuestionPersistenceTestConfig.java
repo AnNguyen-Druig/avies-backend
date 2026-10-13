@@ -27,8 +27,8 @@ import java.util.UUID;
 @Import(QuestionServiceImpl.class)
 public class QuestionPersistenceTestConfig {
     @Bean
-    com.avies.backend.service.OpenAiEmbeddingService openAiEmbeddingService() {
-        return org.mockito.Mockito.mock(com.avies.backend.service.OpenAiEmbeddingService.class);
+    com.avies.backend.service.EmbeddingService openAiEmbeddingService() {
+        return org.mockito.Mockito.mock(com.avies.backend.service.EmbeddingService.class);
     }
 
     @Bean
@@ -37,8 +37,8 @@ public class QuestionPersistenceTestConfig {
     }
 
     @Bean
-    com.avies.backend.service.AiQuestionGenerationService aiQuestionGenerationService() {
-        return org.mockito.Mockito.mock(com.avies.backend.service.AiQuestionGenerationService.class);
+    com.avies.backend.service.QuestionGenerationService aiQuestionGenerationService() {
+        return org.mockito.Mockito.mock(com.avies.backend.service.QuestionGenerationService.class);
     }
 
     /** Tạo nguồn dữ liệu tạm chỉ tồn tại trong tiến trình test. */

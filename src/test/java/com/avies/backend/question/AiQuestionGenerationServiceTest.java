@@ -2,7 +2,7 @@ package com.avies.backend.question;
 
 import com.avies.backend.dto.ai.GeneratedQuestionDto;
 import com.avies.backend.entity.enums.BloomLevel;
-import com.avies.backend.service.impl.AiQuestionGenerationServiceImpl;
+import com.avies.backend.service.impl.QuestionGenerationServiceImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -11,10 +11,10 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("Kiểm thử logic sinh câu hỏi và rubric của AiQuestionGenerationService")
+@DisplayName("Kiểm thử logic sinh câu hỏi và rubric của QuestionGenerationService")
 class AiQuestionGenerationServiceTest {
 
-    private final AiQuestionGenerationServiceImpl service = new AiQuestionGenerationServiceImpl();
+    private final QuestionGenerationServiceImpl service = new QuestionGenerationServiceImpl();
 
     @Test
     @DisplayName("Ném lỗi AI_GENERATION_FAILED khi không có API key hợp lệ hoặc không thể gọi AI")

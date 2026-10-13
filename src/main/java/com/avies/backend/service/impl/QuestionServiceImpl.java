@@ -7,8 +7,8 @@ import com.avies.backend.entity.*;
 import com.avies.backend.entity.enums.*;
 import com.avies.backend.exception.*;
 import com.avies.backend.repository.*;
-import com.avies.backend.service.AiQuestionGenerationService;
-import com.avies.backend.service.OpenAiEmbeddingService;
+import com.avies.backend.service.QuestionGenerationService;
+import com.avies.backend.service.EmbeddingService;
 import com.avies.backend.service.QuestionService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -63,7 +63,7 @@ public class QuestionServiceImpl implements QuestionService {
     /**
      * Dịch vụ sinh vector embeddings từ OpenAI.
      */
-    OpenAiEmbeddingService openAiEmbeddingService;
+    EmbeddingService openAiEmbeddingService;
 
     /**
      * Kho lưu trữ các đoạn tài liệu học tập (chunks) phục vụ RAG qua pgvector.
@@ -73,7 +73,7 @@ public class QuestionServiceImpl implements QuestionService {
     /**
      * Dịch vụ gọi LLM (GPT-4o / Gemini) sinh câu hỏi vấn đáp và rubric.
      */
-    AiQuestionGenerationService aiQuestionGenerationService;
+    QuestionGenerationService aiQuestionGenerationService;
 
     /**
      * Tạo bản nháp thủ công và nhật ký, không cho request quyết định tác giả hoặc trạng thái.

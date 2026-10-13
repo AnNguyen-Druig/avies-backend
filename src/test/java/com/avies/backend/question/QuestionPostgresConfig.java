@@ -45,8 +45,8 @@ import java.util.Map;
         CustomJwtDecoder.class, QuestionExceptionHandler.class, GlobalExceptionHandler.class})
 public class QuestionPostgresConfig {
     @Bean
-    com.avies.backend.service.OpenAiEmbeddingService openAiEmbeddingService() {
-        return org.mockito.Mockito.mock(com.avies.backend.service.OpenAiEmbeddingService.class);
+    com.avies.backend.service.EmbeddingService openAiEmbeddingService() {
+        return org.mockito.Mockito.mock(com.avies.backend.service.EmbeddingService.class);
     }
 
     @Bean
@@ -55,8 +55,8 @@ public class QuestionPostgresConfig {
     }
 
     @Bean
-    com.avies.backend.service.AiQuestionGenerationService aiQuestionGenerationService() {
-        return org.mockito.Mockito.mock(com.avies.backend.service.AiQuestionGenerationService.class);
+    com.avies.backend.service.QuestionGenerationService aiQuestionGenerationService() {
+        return org.mockito.Mockito.mock(com.avies.backend.service.QuestionGenerationService.class);
     }
 
     /** Digest cố định để các thành viên chạy cùng PostgreSQL 17/pgvector, không bị tag thay đổi âm thầm. */

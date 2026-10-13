@@ -12,7 +12,7 @@ import com.avies.backend.repository.SubjectRepository;
 import com.avies.backend.repository.UserRepository;
 import com.avies.backend.service.DocumentParserService;
 import com.avies.backend.service.LearningMaterialService;
-import com.avies.backend.service.OpenAiEmbeddingService;
+import com.avies.backend.service.EmbeddingService;
 import com.avies.backend.service.TextChunkingService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -50,7 +50,7 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
     final LearningMaterialChunkRepository chunkRepository;
     final DocumentParserService documentParserService;
     final TextChunkingService textChunkingService;
-    final OpenAiEmbeddingService openAiEmbeddingService;
+    final EmbeddingService openAiEmbeddingService;
     final JdbcTemplate jdbcTemplate;
 
     @Value("${storage.location:uploads/materials}")

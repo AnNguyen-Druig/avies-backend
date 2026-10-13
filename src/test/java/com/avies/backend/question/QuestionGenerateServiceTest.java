@@ -10,8 +10,8 @@ import com.avies.backend.entity.enums.QuestionStatus;
 import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
 import com.avies.backend.repository.*;
-import com.avies.backend.service.AiQuestionGenerationService;
-import com.avies.backend.service.OpenAiEmbeddingService;
+import com.avies.backend.service.QuestionGenerationService;
+import com.avies.backend.service.EmbeddingService;
 import com.avies.backend.service.QuestionService;
 import com.avies.backend.service.impl.QuestionServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,9 +40,9 @@ class QuestionGenerateServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private LecturerSubjectAssignmentRepository assignmentRepository;
     @Mock private QuestionAuditLogRepository auditRepository;
-    @Mock private OpenAiEmbeddingService openAiEmbeddingService;
+    @Mock private EmbeddingService openAiEmbeddingService;
     @Mock private LearningMaterialChunkRepository chunkRepository;
-    @Mock private AiQuestionGenerationService aiQuestionGenerationService;
+    @Mock private QuestionGenerationService aiQuestionGenerationService;
 
     private QuestionService questionService;
 

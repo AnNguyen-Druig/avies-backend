@@ -16,7 +16,7 @@ import java.util.List;
  * 7. Trả kết quả về {@code QuestionService} để lưu DB và phản hồi client
  * Nếu không thể kết nối AI service hoặc thiếu API key, ném {@code AppException} (code 1025).
  */
-public interface AiQuestionGenerationService {
+public interface QuestionGenerationService {
 
     /**
      * Sinh danh sách câu hỏi và rubric tương ứng từ ngữ cảnh tài liệu và từ khóa.

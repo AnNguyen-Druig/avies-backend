@@ -4,7 +4,7 @@ import com.avies.backend.dto.ai.GeneratedQuestionDto;
 import com.avies.backend.entity.enums.BloomLevel;
 import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
-import com.avies.backend.service.AiQuestionGenerationService;
+import com.avies.backend.service.QuestionGenerationService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,7 +24,7 @@ import java.util.*;
 @Slf4j
 @Service
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class AiQuestionGenerationServiceImpl implements AiQuestionGenerationService {
+public class QuestionGenerationServiceImpl implements QuestionGenerationService {
 
     @Value("${openai.api-key:}")
     String openAiApiKey;
@@ -44,12 +44,12 @@ public class AiQuestionGenerationServiceImpl implements AiQuestionGenerationServ
     final RestClient restClient;
     final ObjectMapper objectMapper;
 
-    public AiQuestionGenerationServiceImpl() {
+    public QuestionGenerationServiceImpl() {
         this.restClient = RestClient.builder().build();
         this.objectMapper = new ObjectMapper();
     }
 
-    public AiQuestionGenerationServiceImpl(ObjectMapper objectMapper) {
+    public QuestionGenerationServiceImpl(ObjectMapper objectMapper) {
         this.restClient = RestClient.builder().build();
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
     }
