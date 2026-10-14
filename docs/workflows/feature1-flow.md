@@ -340,7 +340,7 @@ Mỗi người vẫn chịu trách nhiệm test phần mình; không dồn toàn
 | [Architecture](../diagrams/System-Overview-Architecture-Design_logo.png) | Tổng quan kiến trúc, cần cập nhật khi thiết kế thực tế thay đổi |
 | [Các diagram](../diagrams/All_Diagram.drawio) | ERD, class/use case và bổ sung thiết kế |
 | [Swimlane](../diagrams/AIVES_swimlance.vpp) | Luồng tương tác nghiệp vụ |
-| [Question CRUD](../question-crud.md) | Hợp đồng CRUD đang có, giới hạn và phân quyền |
+| [Question CRUD](../business_rules/question-crud.md) | Hợp đồng CRUD đang có, giới hạn và phân quyền |
 | [Hướng dẫn test hiện hành](../testing/question-crud-tests.md) | Lệnh test an toàn, kết quả và giới hạn xác minh |
 | [SQL khởi tạo](../database/AIVES_DB_POSTGRESQL_FINAL.sql) | Tham chiếu schema khởi tạo; không dùng để nâng cấp DB đang tồn tại |
 | [Migration Question](../migrations/20261005_question_crud.sql) | Script đã triển khai; không sửa lịch sử để thêm nghiệp vụ mới |
