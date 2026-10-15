@@ -5,6 +5,12 @@ spring:
   application:
     name: avies-backend
 
+  # Kích thước file upload
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
   datasource:
     # URL ket noi JDBC toi Supabase Postgres voi schema aives va public (chua extension pgvector)
     url: ${DB_URL}
