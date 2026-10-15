@@ -8,6 +8,7 @@ import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
 import com.avies.backend.repository.LearningMaterialChunkRepository;
 import com.avies.backend.repository.LearningMaterialRepository;
+import com.avies.backend.repository.LecturerSubjectAssignmentRepository;
 import com.avies.backend.repository.SubjectRepository;
 import com.avies.backend.repository.UserRepository;
 import com.avies.backend.service.DocumentParserService;
@@ -21,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +40,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+/** Xử lý tài liệu và RAG; giảng viên chỉ được đọc/upload trong môn đang được phân công. */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -52,6 +55,8 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
     final TextChunkingService textChunkingService;
     final EmbeddingService openAiEmbeddingService;
     final JdbcTemplate jdbcTemplate;
+    /** Kiểm tra phân công hiện hành trước khi truy cập tài liệu hoặc tạo tác dụng phụ khi upload. */
+    final LecturerSubjectAssignmentRepository assignmentRepository;
 
     @Value("${storage.location:uploads/materials}")
     String storageLocation;
@@ -75,14 +80,13 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
     @Transactional
     public MaterialUploadResponse uploadAndProcessMaterial(Long subjectId, String title, MultipartFile file) {
         // 1. Lấy thông tin user đang đăng nhập
-        var context = SecurityContextHolder.getContext();
-        String username = context.getAuthentication().getName();
-        User currentUser = userRepository.findByUsername(username)
-                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+        User currentUser = currentMaterialActor();
+        String username = currentUser.getUsername();
 
         // 2. Kiểm tra môn học
         Subject subject = subjectRepository.findById(subjectId)
                 .orElseThrow(() -> new AppException(ErrorCode.SUBJECT_NOT_EXISTED));
+        requireSubjectAssignment(currentUser, subject.getId());
 
         // 3. Kiểm tra file upload
         if (file == null || file.isEmpty()) {
@@ -217,6 +221,7 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
 
     /**
      * Xóa tài liệu học tập:
+     * Chỉ ADMIN được xóa, kể cả khi gọi trực tiếp tầng service.
      * 1. Kiểm tra tài liệu tồn tại
      * 2. Xóa chunks trong DB (đa số DB đã có ON DELETE CASCADE tự động)
      * 3. Xóa bản ghi LearningMaterial
@@ -224,6 +229,10 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
      */
     @Transactional
     public void deleteMaterial(Long materialId) {
+        User currentUser = currentMaterialActor();
+        if (!isAdmin(currentUser)) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
         // 1. Kiểm tra tài liệu
         LearningMaterial material = learningMaterialRepository.findById(materialId)
                 .orElseThrow(() -> new AppException(ErrorCode.MATERIAL_NOT_EXISTED));
@@ -298,10 +307,13 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
                 .build();
     }
 
+    /** Đọc tài liệu trong môn được phân công; admin được đọc mọi môn, không giới hạn người upload. */
     @Transactional(readOnly = true)
     public List<MaterialUploadResponse> getMaterialsBySubject(Long subjectId) {
+        User currentUser = currentMaterialActor();
         Subject subject = subjectRepository.findById(subjectId)
                 .orElseThrow(() -> new AppException(ErrorCode.SUBJECT_NOT_EXISTED));
+        requireSubjectAssignment(currentUser, subject.getId());
 
         return learningMaterialRepository.findBySubjectId(subjectId).stream()
                 .map(m -> MaterialUploadResponse.builder()
@@ -318,5 +330,33 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
                         .createdAt(m.getCreatedAt())
                         .build())
                 .toList();
+    }
+
+    /** Đọc vai trò hiện hành từ database để token cũ hoặc lời gọi service không vượt quyền. */
+    private User currentMaterialActor() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof AnonymousAuthenticationToken) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+        User actor = userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+        if (!isAdmin(actor) && (actor.getRole() == null
+                || !"LECTURER".equalsIgnoreCase(actor.getRole().getCode()))) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+        return actor;
+    }
+
+    /** Admin không cần phân công; lecturer phải có liên kết với đúng môn của tài liệu. */
+    private void requireSubjectAssignment(User actor, Long subjectId) {
+        if (!isAdmin(actor) && !assignmentRepository.existsByLecturerIdAndSubjectId(actor.getId(), subjectId)) {
+            throw new AppException(ErrorCode.SUBJECT_NOT_ASSIGNED);
+        }
+    }
+
+    /** Xác định admin theo vai trò trong database, không dựa riêng vào authority của token. */
+    private boolean isAdmin(User actor) {
+        return actor.getRole() != null && "ADMIN".equalsIgnoreCase(actor.getRole().getCode());
     }
 }

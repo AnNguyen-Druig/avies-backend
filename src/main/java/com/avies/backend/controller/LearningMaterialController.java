@@ -31,11 +31,11 @@ public class LearningMaterialController {
     LearningMaterialService learningMaterialService;
 
     @Operation(summary = "Upload tai lieu hoc tap",
-            description = "Upload file tai lieu (PDF, DOCX,...). He thong tu dong: boc tach van ban, chia chunks, sinh embeddings 1536 chieu, luu pgvector.")
+            description = "Upload file tai lieu (PDF, DOCX,...). LECTURER phai duoc phan cong mon hoc; ADMIN khong can phan cong. He thong tu dong: boc tach van ban, chia chunks, sinh embeddings 1536 chieu, luu pgvector.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Upload va xu ly vector thanh cong"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "File khong hop le hoac thieu thong tin"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Chi LECTURER hoac ADMIN moi duoc upload")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen hoac LECTURER chua duoc phan cong mon (code 1101)")
     })
     @PreAuthorize("hasAnyAuthority('ROLE_LECTURER', 'ROLE_ADMIN')")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -53,10 +53,10 @@ public class LearningMaterialController {
                 .build();
     }
 
-    @Operation(summary = "Lay danh sach tai lieu theo mon hoc", description = "Tra ve tat ca tai lieu da upload cho mot mon hoc")
+    @Operation(summary = "Lay danh sach tai lieu theo mon hoc", description = "Tra ve tai lieu trong mon duoc phan cong cho LECTURER; ADMIN xem duoc moi mon. Thu hoi phan cong se chan ca tai lieu do chinh giang vien upload.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Danh sach tai lieu"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen hoac LECTURER chua duoc phan cong mon (code 1101)")
     })
     @PreAuthorize("hasAnyAuthority('ROLE_LECTURER', 'ROLE_ADMIN')")
     @GetMapping("/subject/{subjectId}")

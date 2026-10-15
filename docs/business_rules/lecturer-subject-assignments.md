@@ -8,6 +8,8 @@
 - Giữ nguyên API `/subjects` đang được các màn hình khác sử dụng. Dropdown Learning Materials và Question Bank phải chuyển sang API `my-subjects` bên dưới khi tích hợp frontend.
 - Không coi lọc dropdown là cơ chế phân quyền cho API nội dung. Các API Question/Learning Material vẫn cần kiểm tra quyền riêng ở backend; đợt thay đổi này không sửa nghiệp vụ các API đó.
 
+Cập nhật bổ sung: Learning Materials đã có kiểm tra phân công tại service cho GET/upload. Sau thu hồi, lecturer nhận `403 / 1101` khi gọi các API này; xem [phân quyền Learning Materials](learning-material-access.md). Quyền sửa tiêu đề và xóa vẫn chỉ dành cho ADMIN.
+
 ## 2. Hợp đồng bốn API
 
 Các đường dẫn dưới đây là đường dẫn controller; ghép thêm context path của ứng dụng nếu có. Gửi `Authorization: Bearer <access_token>` và `Content-Type: application/json` cho POST.

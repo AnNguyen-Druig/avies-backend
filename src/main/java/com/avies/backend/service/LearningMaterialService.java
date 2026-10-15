@@ -23,12 +23,13 @@ public interface LearningMaterialService {
     @Transactional
     MaterialUploadResponse uploadAndProcessMaterial(Long subjectId, String title, MultipartFile file);
 
+    /** Giảng viên chỉ xem tài liệu trong môn đang được phân công; admin xem được mọi môn. */
     @Transactional(readOnly = true)
     List<MaterialUploadResponse> getMaterialsBySubject(Long subjectId);
 
     /**
      * Xóa tài liệu: xóa file vật lý trên ổ đĩa + chunks trong DB + bản ghi LearningMaterial.
-     * Chỉ người upload hoặc Admin mới được xóa.
+     * Chỉ ADMIN được xóa; giảng viên không được xóa kể cả tài liệu của mình.
      */
     @Transactional
     void deleteMaterial(Long materialId);
