@@ -40,4 +40,9 @@ public interface QuestionService {
      * gọi GPT-4o/Gemini và lưu câu hỏi & rubric dưới trạng thái DRAFT.
      */
     java.util.List<QuestionResponse> generateQuestions(@Valid QuestionGenerateRequest request);
+
+    /**
+     * Phê duyệt câu hỏi vào ngân hàng chính thức (chuyển sang trạng thái APPROVED).
+     */
+    QuestionResponse approveQuestion(@Positive Long id);
 }

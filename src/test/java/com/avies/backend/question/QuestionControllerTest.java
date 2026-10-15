@@ -251,4 +251,67 @@ class QuestionControllerTest {
                 .andExpect(jsonPath("$.message").value("Mức độ nhận thức (bloomLevel) không hợp lệ; bloomLevel phải nằm trong 6 level: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE và CREATE."));
         verifyNoInteractions(service);
     }
+
+    /** POST /questions/{id}/approve phê duyệt câu hỏi thành công trả về HTTP 200. */
+    @Test
+    void approveQuestionReturns200AndResult() throws Exception {
+        when(service.approveQuestion(7L)).thenReturn(QuestionResponse.builder()
+                .id(7L)
+                .content("Câu hỏi đã duyệt")
+                .status(com.avies.backend.entity.enums.QuestionStatus.APPROVED)
+                .build());
+
+        mvc.perform(post("/questions/7/approve")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_LECTURER"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1000))
+                .andExpect(jsonPath("$.message").value("Phe duyet cau hoi thanh cong."))
+                .andExpect(jsonPath("$.result.id").value(7))
+                .andExpect(jsonPath("$.result.status").value("APPROVED"));
+
+        verify(service).approveQuestion(7L);
+    }
+
+    /** PATCH /questions/{id}/approve cũng được hỗ trợ và trả về HTTP 200. */
+    @Test
+    void approveQuestionWithPatchReturns200() throws Exception {
+        when(service.approveQuestion(7L)).thenReturn(QuestionResponse.builder()
+                .id(7L)
+                .status(com.avies.backend.entity.enums.QuestionStatus.APPROVED)
+                .build());
+
+        mvc.perform(patch("/questions/7/approve")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.id").value(7))
+                .andExpect(jsonPath("$.result.status").value("APPROVED"));
+
+        verify(service).approveQuestion(7L);
+    }
+
+    /** Student bị chặn khi gọi approve question. */
+    @Test
+    void studentCannotApproveQuestion() throws Exception {
+        mvc.perform(post("/questions/7/approve")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_STUDENT"))))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(service);
+    }
+
+    /** Request chưa xác thực bị trả về 401 khi approve. */
+    @Test
+    void unauthenticatedApproveReturns401() throws Exception {
+        mvc.perform(post("/questions/7/approve"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(service);
+    }
+
+    /** ID không hợp lệ trả về 400. */
+    @Test
+    void approveWithInvalidIdReturns400() throws Exception {
+        mvc.perform(post("/questions/0/approve")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_LECTURER"))))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
 }
