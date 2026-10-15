@@ -343,7 +343,7 @@ class QuestionServiceIntegrationTest {
         assertThat(reloaded.getUpdatedBy().getId()).isEqualTo(owner.getId());
 
         long auditCount = audits.findAll().stream()
-                .filter(a -> a.getQuestionId().equals(created.getId()) && "APPROVED".equals(a.getAction()))
+                .filter(a -> a.getQuestionId().equals(created.getId()) && "UPDATED".equals(a.getAction()))
                 .count();
         assertThat(auditCount).isEqualTo(1);
     }
@@ -386,25 +386,14 @@ class QuestionServiceIntegrationTest {
         expectError(() -> service.approveQuestion(created.getId()), ErrorCode.QUESTION_NOT_EDITABLE);
     }
 
-    /** Duyệt câu hỏi đã được duyệt là thao tác idempotent, không ghi thêm audit log. */
+    /** Không cho phép duyệt lại câu hỏi đã được duyệt trước đó. */
     @Test
-    void approvingAlreadyApprovedQuestionIsIdempotent() {
+    void cannotApproveAlreadyApprovedQuestion() {
         login(owner);
         QuestionResponse created = service.createQuestion(creation("Câu hỏi duyệt hai lần"));
         service.approveQuestion(created.getId());
 
-        long auditsBefore = audits.findAll().stream()
-                .filter(a -> a.getQuestionId().equals(created.getId()) && "APPROVED".equals(a.getAction()))
-                .count();
-        assertThat(auditsBefore).isEqualTo(1);
-
-        QuestionResponse secondApprove = service.approveQuestion(created.getId());
-        assertThat(secondApprove.getStatus()).isEqualTo(QuestionStatus.APPROVED);
-
-        long auditsAfter = audits.findAll().stream()
-                .filter(a -> a.getQuestionId().equals(created.getId()) && "APPROVED".equals(a.getAction()))
-                .count();
-        assertThat(auditsAfter).isEqualTo(1);
+        expectError(() -> service.approveQuestion(created.getId()), ErrorCode.QUESTION_ALREADY_APPROVED);
     }
 
     /** Duyệt câu hỏi không tồn tại trả về 404 NOT_FOUND. */

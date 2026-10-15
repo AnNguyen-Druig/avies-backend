@@ -265,7 +265,7 @@ class QuestionControllerTest {
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_LECTURER"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(1000))
-                .andExpect(jsonPath("$.message").value("Phe duyet cau hoi thanh cong."))
+                .andExpect(jsonPath("$.message").value("Phê duyệt câu hỏi thành công."))
                 .andExpect(jsonPath("$.result.id").value(7))
                 .andExpect(jsonPath("$.result.status").value("APPROVED"));
 

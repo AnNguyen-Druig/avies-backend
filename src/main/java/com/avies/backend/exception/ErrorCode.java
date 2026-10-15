@@ -38,6 +38,7 @@ public enum ErrorCode {
     QUESTION_IN_USE(1103, "Câu hỏi đã được sử dụng trong bài thi", HttpStatus.CONFLICT),
     QUESTION_VERSION_CONFLICT(1104, "Câu hỏi đã thay đổi; hãy tải lại trước khi thao tác", HttpStatus.CONFLICT),
     QUESTION_DATA_CONFLICT(1105, "Dữ liệu đang được tham chiếu hoặc có thao tác đồng thời", HttpStatus.CONFLICT),
+    QUESTION_ALREADY_APPROVED(1106, "Câu hỏi này đã được duyệt trước đó", HttpStatus.BAD_REQUEST),
     /** Tài khoản đích tồn tại nhưng không phải giảng viên. */
     ASSIGNMENT_NOT_LECTURER(1200, "Tài khoản được chọn không có vai trò LECTURER", HttpStatus.BAD_REQUEST),
     /** Phân công gặp thay đổi đồng thời hoặc dữ liệu tham chiếu không còn hợp lệ. */

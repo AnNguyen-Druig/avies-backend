@@ -449,15 +449,15 @@ public class QuestionServiceImpl implements QuestionService {
         if (question.getArchivedAt() != null) {
             throw new AppException(ErrorCode.QUESTION_NOT_EDITABLE);
         }
-        if (question.getStatus() == QuestionStatus.APPROVED && Boolean.TRUE.equals(question.getIsApproved())) {
-            return toResponse(question);
+        if (question.getStatus() == QuestionStatus.APPROVED || Boolean.TRUE.equals(question.getIsApproved())) {
+            throw new AppException(ErrorCode.QUESTION_ALREADY_APPROVED);
         }
         question.setStatus(QuestionStatus.APPROVED);
         question.setIsApproved(true);
         question.setUpdatedBy(actor);
         question.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         questionRepository.flush();
-        audit(question, actor, "APPROVED");
+        audit(question, actor, "UPDATED");
         return toResponse(question);
     }
 
