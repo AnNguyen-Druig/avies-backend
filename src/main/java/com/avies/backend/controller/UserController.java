@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @Slf4j
-@Tag(name = "Users", description = "Quan ly tai khoan nguoi dung (Admin, Giang vien, Sinh vien)")
+@Tag(name = "Users", description = "Quản lý tài khoản người dùng (Admin, Giảng viên, Sinh viên)")
 @RestController
 @RequestMapping("/users")
 @RequiredArgsConstructor
@@ -29,10 +29,10 @@ public class UserController {
 
     UserService userService;
 
-    @Operation(summary = "Lay thong tin ca nhan", description = "Tra ve thong tin user dang dang nhap dua vao JWT")
+    @Operation(summary = "Lấy thông tin cá nhân", description = "Trả về thông tin user đang đăng nhập dựa vào JWT")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Chua xac thuc")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Chưa xác thực")
     })
     @GetMapping("/myInfo")
     public ApiResponse<UserResponse> getMyInfo() {
@@ -42,10 +42,10 @@ public class UserController {
                 .build();
     }
 
-    @Operation(summary = "Lay danh sach tat ca users", description = "Chi ADMIN moi co quyen truy cap")
+    @Operation(summary = "Lấy danh sách tất cả users", description = "Chỉ ADMIN mới có quyền truy cập")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Danh sach users"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Danh sách users"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Không có quyền")
     })
     @GetMapping
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
@@ -55,10 +55,10 @@ public class UserController {
                 .build();
     }
 
-    @Operation(summary = "Tao tai khoan (Admin)", description = "Admin tao tai khoan moi voi role STUDENT hoac LECTURER")
+    @Operation(summary = "Tạo tài khoản (Admin)", description = "Admin tạo tài khoản mới với role STUDENT hoặc LECTURER")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Tao thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Tạo thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Không có quyền")
     })
     @PostMapping("/create")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
@@ -68,10 +68,10 @@ public class UserController {
                 .build();
     }
 
-    @Operation(summary = "Cap nhat thong tin user", description = "User da xac thuc co the cap nhat thong tin cua minh")
+    @Operation(summary = "Cập nhật thông tin user", description = "User đã xác thực có thể cập nhật thông tin của mình")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Cap nhat thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Khong tim thay user")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Cập nhật thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Không tìm thấy user")
     })
     @PutMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
@@ -81,17 +81,17 @@ public class UserController {
                 .build();
     }
 
-    @Operation(summary = "Xoa user", description = "Chi ADMIN moi co quyen xoa tai khoan")
+    @Operation(summary = "Xóa user", description = "Chỉ ADMIN mới có quyền xóa tài khoản")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Xoa thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Xóa thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Không có quyền")
     })
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ApiResponse<String> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
         return ApiResponse.<String>builder()
-                .result("Xoa nguoi dung thanh cong")
+                .result("Xóa người dùng thành công")
                 .build();
     }
 }
