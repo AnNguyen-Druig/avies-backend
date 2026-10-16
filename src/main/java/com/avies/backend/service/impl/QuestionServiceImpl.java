@@ -434,6 +434,34 @@ public class QuestionServiceImpl implements QuestionService {
     }
 
     /**
+     * Phê duyệt câu hỏi vào ngân hàng chính thức.
+     * Chỉ Admin hoặc Giảng viên được phân công môn học của câu hỏi mới được duyệt.
+     * Cập nhật trạng thái thành APPROVED, isApproved = true, lưu thông tin người duyệt và thời điểm duyệt.
+     * Không cho phép duyệt câu hỏi đã bị lưu trữ (archived).
+     */
+    @Override
+    @Transactional
+    public QuestionResponse approveQuestion(Long id) {
+        User actor = currentActor();
+        Question question = questionRepository.findForUpdate(id)
+                .orElseThrow(() -> new AppException(ErrorCode.QUESTION_NOT_FOUND));
+        requireAssignment(actor, question.getSubject().getId());
+        if (question.getArchivedAt() != null) {
+            throw new AppException(ErrorCode.QUESTION_NOT_EDITABLE);
+        }
+        if (question.getStatus() == QuestionStatus.APPROVED || Boolean.TRUE.equals(question.getIsApproved())) {
+            throw new AppException(ErrorCode.QUESTION_ALREADY_APPROVED);
+        }
+        question.setStatus(QuestionStatus.APPROVED);
+        question.setIsApproved(true);
+        question.setUpdatedBy(actor);
+        question.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        questionRepository.flush();
+        audit(question, actor, "UPDATED");
+        return toResponse(question);
+    }
+
+    /**
      * Ghi nhật ký cùng transaction để không tồn tại sự kiện của thao tác đã rollback.
      */
     private void audit(Question question, User actor, String action) {

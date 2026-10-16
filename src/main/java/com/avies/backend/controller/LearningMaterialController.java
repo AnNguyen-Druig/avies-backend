@@ -21,7 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 @Slf4j
-@Tag(name = "Learning Materials", description = "Quan ly tai lieu hoc tap: upload, xem, xoa, cap nhat tieu de (tich hop RAG vector)")
+@Tag(name = "Learning Materials", description = "Quản lý tài liệu học tập: upload, xem, xóa, cập nhật tiêu đề (tích hợp RAG vector)")
 @RestController
 @RequestMapping("/materials")
 @RequiredArgsConstructor
@@ -30,38 +30,38 @@ public class LearningMaterialController {
 
     LearningMaterialService learningMaterialService;
 
-    @Operation(summary = "Upload tai lieu hoc tap",
-            description = "Upload file tai lieu (PDF, DOCX,...). LECTURER phai duoc phan cong mon hoc; ADMIN khong can phan cong. He thong tu dong: boc tach van ban, chia chunks, sinh embeddings 1536 chieu, luu pgvector.")
+    @Operation(summary = "Upload tài liệu học tập",
+            description = "Upload file tài liệu (PDF, DOCX,...). LECTURER phải được phân công môn học; ADMIN không cần phân công. Hệ thống tự động: bóc tách văn bản, chia chunks, sinh embeddings 1536 chiều, lưu pgvector.")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Upload va xu ly vector thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "File khong hop le hoac thieu thong tin"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen hoac LECTURER chua duoc phan cong mon (code 1101)")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Upload và xử lý vector thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "File không hợp lệ hoặc thiếu thông tin"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Không có quyền hoặc LECTURER chưa được phân công môn (mã lỗi 1101)")
     })
     @PreAuthorize("hasAnyAuthority('ROLE_LECTURER', 'ROLE_ADMIN')")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<MaterialUploadResponse> uploadMaterial(
-            @Parameter(description = "File tai lieu (PDF, DOCX, TXT, ...)") @RequestParam("file") MultipartFile file,
-            @Parameter(description = "ID cua mon hoc") @RequestParam("subjectId") Long subjectId,
-            @Parameter(description = "Tieu de tai lieu (neu bo trong se lay ten file)") @RequestParam(value = "title", required = false) String title
+            @Parameter(description = "File tài liệu (PDF, DOCX, TXT, ...)") @RequestParam("file") MultipartFile file,
+            @Parameter(description = "ID của môn học") @RequestParam("subjectId") Long subjectId,
+            @Parameter(description = "Tiêu đề tài liệu (nếu để trống sẽ lấy tên file)") @RequestParam(value = "title", required = false) String title
     ) {
         log.info("Nhan yeu cau upload tai lieu cho mon hoc ID={}, file={}", subjectId, file.getOriginalFilename());
         MaterialUploadResponse response = learningMaterialService.uploadAndProcessMaterial(subjectId, title, file);
         return ApiResponse.<MaterialUploadResponse>builder()
                 .code(1000)
-                .message("Tai lieu da duoc tai len va xu ly vector RAG thanh cong")
+                .message("Tài liệu đã được tải lên và xử lý vector RAG thành công")
                 .result(response)
                 .build();
     }
 
-    @Operation(summary = "Lay danh sach tai lieu theo mon hoc", description = "Tra ve tai lieu trong mon duoc phan cong cho LECTURER; ADMIN xem duoc moi mon. Thu hoi phan cong se chan ca tai lieu do chinh giang vien upload.")
+    @Operation(summary = "Lấy danh sách tài liệu theo môn học", description = "Trả về tài liệu trong môn được phân công cho LECTURER; ADMIN xem được mọi môn. Thu hồi phân công sẽ chặn cả tài liệu do chính giảng viên upload.")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Danh sach tai lieu"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen hoac LECTURER chua duoc phan cong mon (code 1101)")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Danh sách tài liệu"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Không có quyền hoặc LECTURER chưa được phân công môn (mã lỗi 1101)")
     })
     @PreAuthorize("hasAnyAuthority('ROLE_LECTURER', 'ROLE_ADMIN')")
     @GetMapping("/subject/{subjectId}")
     public ApiResponse<List<MaterialUploadResponse>> getMaterialsBySubject(
-            @Parameter(description = "ID cua mon hoc") @PathVariable("subjectId") Long subjectId
+            @Parameter(description = "ID của môn học") @PathVariable("subjectId") Long subjectId
     ) {
         List<MaterialUploadResponse> list = learningMaterialService.getMaterialsBySubject(subjectId);
         return ApiResponse.<List<MaterialUploadResponse>>builder()
@@ -69,41 +69,41 @@ public class LearningMaterialController {
                 .build();
     }
 
-    @Operation(summary = "Xoa tai lieu", description = "Chi ADMIN. Xoa file vat ly va toan bo chunks/vectors (CASCADE).")
+    @Operation(summary = "Xóa tài liệu", description = "Chỉ ADMIN. Xóa file vật lý và toàn bộ chunks/vectors (CASCADE).")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Xoa thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Khong tim thay tai lieu"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Khong co quyen")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Xóa thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Không tìm thấy tài liệu"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Không có quyền")
     })
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @DeleteMapping("/{materialId}")
     public ApiResponse<Void> deleteMaterial(
-            @Parameter(description = "ID tai lieu can xoa") @PathVariable("materialId") Long materialId
+            @Parameter(description = "ID tài liệu cần xóa") @PathVariable("materialId") Long materialId
     ) {
         log.info("Nhan yeu cau xoa tai lieu id={}", materialId);
         learningMaterialService.deleteMaterial(materialId);
         return ApiResponse.<Void>builder()
                 .code(1000)
-                .message("Tai lieu va toan bo du lieu vector da duoc xoa thanh cong")
+                .message("Tài liệu và toàn bộ dữ liệu vector đã được xóa thành công")
                 .build();
     }
 
-    @Operation(summary = "Cap nhat tieu de tai lieu", description = "Chi cap nhat metadata (tieu de), khong tai xu ly chunks/embeddings. Chi ADMIN.")
+    @Operation(summary = "Cập nhật tiêu đề tài liệu", description = "Chỉ cập nhật metadata (tiêu đề), không tái xử lý chunks/embeddings. Chỉ ADMIN.")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Cap nhat thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Khong tim thay tai lieu")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Cập nhật thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Không tìm thấy tài liệu")
     })
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @PatchMapping("/{materialId}/title")
     public ApiResponse<MaterialUploadResponse> updateMaterialTitle(
-            @Parameter(description = "ID tai lieu") @PathVariable("materialId") Long materialId,
+            @Parameter(description = "ID tài liệu") @PathVariable("materialId") Long materialId,
             @RequestBody @Valid MaterialUpdateRequest request
     ) {
         log.info("Nhan yeu cau cap nhat tieu de tai lieu id={}", materialId);
         MaterialUploadResponse response = learningMaterialService.updateMaterialTitle(materialId, request.getTitle());
         return ApiResponse.<MaterialUploadResponse>builder()
                 .code(1000)
-                .message("Cap nhat tieu de tai lieu thanh cong")
+                .message("Cập nhật tiêu đề tài liệu thành công")
                 .result(response)
                 .build();
     }

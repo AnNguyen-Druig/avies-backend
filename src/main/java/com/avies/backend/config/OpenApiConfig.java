@@ -56,6 +56,6 @@ public class OpenApiConfig {
                 .type(SecurityScheme.Type.HTTP)
                 .scheme("bearer")
                 .bearerFormat("JWT")
-                .description("Nhap JWT Access Token (khong can tien to Bearer)");
+                .description("Nhập JWT Access Token (không cần tiền tố Bearer)");
     }
 }

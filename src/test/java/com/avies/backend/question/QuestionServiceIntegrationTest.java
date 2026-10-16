@@ -327,6 +327,82 @@ class QuestionServiceIntegrationTest {
         assertThatThrownBy(() -> service.updateQuestion(1L, empty)).isInstanceOf(ConstraintViolationException.class);
     }
 
+    /** Giảng viên được phân công duyệt câu hỏi thành công thành APPROVED và có audit log. */
+    @Test
+    void assignedLecturerCanApproveQuestion() {
+        login(owner);
+        QuestionResponse created = service.createQuestion(creation("Câu hỏi cần duyệt"));
+        assertThat(created.getStatus()).isEqualTo(QuestionStatus.DRAFT);
+
+        QuestionResponse approved = service.approveQuestion(created.getId());
+        assertThat(approved.getStatus()).isEqualTo(QuestionStatus.APPROVED);
+
+        Question reloaded = questions.findById(created.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(QuestionStatus.APPROVED);
+        assertThat(reloaded.getIsApproved()).isTrue();
+        assertThat(reloaded.getUpdatedBy().getId()).isEqualTo(owner.getId());
+
+        long auditCount = audits.findAll().stream()
+                .filter(a -> a.getQuestionId().equals(created.getId()) && "UPDATED".equals(a.getAction()))
+                .count();
+        assertThat(auditCount).isEqualTo(1);
+    }
+
+    /** Admin có thể duyệt câu hỏi của bất kỳ môn học nào. */
+    @Test
+    void adminCanApproveQuestion() {
+        login(owner);
+        QuestionResponse created = service.createQuestion(creation("Câu hỏi cho admin duyệt"));
+
+        login(admin);
+        QuestionResponse approved = service.approveQuestion(created.getId());
+        assertThat(approved.getStatus()).isEqualTo(QuestionStatus.APPROVED);
+
+        Question reloaded = questions.findById(created.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(QuestionStatus.APPROVED);
+        assertThat(reloaded.getIsApproved()).isTrue();
+        assertThat(reloaded.getUpdatedBy().getId()).isEqualTo(admin.getId());
+    }
+
+    /** Giảng viên không được phân công môn học không thể duyệt câu hỏi. */
+    @Test
+    void unassignedLecturerCannotApproveQuestion() {
+        login(owner);
+        QuestionResponse created = service.createQuestion(creation("Câu hỏi môn SWD392"));
+
+        login(outsider);
+        expectError(() -> service.approveQuestion(created.getId()), ErrorCode.SUBJECT_NOT_ASSIGNED);
+    }
+
+    /** Không thể duyệt câu hỏi đã bị lưu trữ (archived). */
+    @Test
+    void cannotApproveArchivedQuestion() {
+        login(owner);
+        QuestionResponse created = service.createQuestion(creation("Câu hỏi sắp bị lưu trữ"));
+        Question question = questions.findById(created.getId()).orElseThrow();
+        question.setArchivedAt(OffsetDateTime.now());
+        entityManager.flush();
+
+        expectError(() -> service.approveQuestion(created.getId()), ErrorCode.QUESTION_NOT_EDITABLE);
+    }
+
+    /** Không cho phép duyệt lại câu hỏi đã được duyệt trước đó. */
+    @Test
+    void cannotApproveAlreadyApprovedQuestion() {
+        login(owner);
+        QuestionResponse created = service.createQuestion(creation("Câu hỏi duyệt hai lần"));
+        service.approveQuestion(created.getId());
+
+        expectError(() -> service.approveQuestion(created.getId()), ErrorCode.QUESTION_ALREADY_APPROVED);
+    }
+
+    /** Duyệt câu hỏi không tồn tại trả về 404 NOT_FOUND. */
+    @Test
+    void approveNonExistentQuestionThrowsNotFound() {
+        login(owner);
+        expectError(() -> service.approveQuestion(999999L), ErrorCode.QUESTION_NOT_FOUND);
+    }
+
     /** Tạo vai trò với đầy đủ thuộc tính bắt buộc. */
     private Role role(String code) {
         Role value = Role.builder().code(code).name(code).build();

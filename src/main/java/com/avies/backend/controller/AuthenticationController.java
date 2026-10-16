@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.text.ParseException;
 
-@Tag(name = "Authentication", description = "API xac thuc: dang nhap, dang ky, lam moi token, introspect, dang xuat")
+@Tag(name = "Authentication", description = "API xác thực: đăng nhập, đăng ký, làm mới token, kiểm tra token (introspect), đăng xuất")
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
@@ -33,12 +33,12 @@ public class AuthenticationController {
     AuthenticationService authenticationService;
 
     /**
-     * API Dang nhap
+     * API Đăng nhập
      */
-    @Operation(summary = "Dang nhap", description = "Xac thuc username/password, tra ve JWT Access Token + Refresh Token")
+    @Operation(summary = "Đăng nhập", description = "Xác thực username/password, trả về JWT Access Token + Refresh Token")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Dang nhap thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Sai username hoac password")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Đăng nhập thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Sai username hoặc password")
     })
     @SecurityRequirements
     @PostMapping("/signin")
@@ -50,12 +50,12 @@ public class AuthenticationController {
     }
 
     /**
-     * API Dang ky tai khoan
+     * API Đăng ký tài khoản
      */
-    @Operation(summary = "Dang ky tai khoan", description = "Tao tai khoan moi voi role mac dinh STUDENT")
+    @Operation(summary = "Đăng ký tài khoản", description = "Tạo tài khoản mới với role mặc định STUDENT")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Dang ky thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Username da ton tai hoac du lieu khong hop le")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Đăng ký thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Username đã tồn tại hoặc dữ liệu không hợp lệ")
     })
     @SecurityRequirements
     @PostMapping("/signup")
@@ -67,12 +67,12 @@ public class AuthenticationController {
     }
 
     /**
-     * API Lam moi Access Token
+     * API Làm mới Access Token
      */
-    @Operation(summary = "Lam moi Access Token", description = "Dung Refresh Token de lay Access Token moi khi token cu het han")
+    @Operation(summary = "Làm mới Access Token", description = "Dùng Refresh Token để lấy Access Token mới khi token cũ hết hạn")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Token moi da duoc cap"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Refresh Token khong hop le hoac da het han")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Token mới đã được cấp"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Refresh Token không hợp lệ hoặc đã hết hạn")
     })
     @SecurityRequirements
     @PostMapping({"/refresh"})
@@ -85,11 +85,11 @@ public class AuthenticationController {
     }
 
     /**
-     * API Kiem tra token hop le
+     * API Kiểm tra token hợp lệ
      */
-    @Operation(summary = "Kiem tra token", description = "Introspect JWT token de xac dinh token con hieu luc khong")
+    @Operation(summary = "Kiểm tra token", description = "Introspect JWT token để xác định token còn hiệu lực không")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Ket qua introspect")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Kết quả kiểm tra token (introspect)")
     })
     @SecurityRequirements
     @PostMapping("/introspect")
@@ -101,11 +101,11 @@ public class AuthenticationController {
     }
 
     /**
-     * API Dang xuat (Blacklist token)
+     * API Đăng xuất (Blacklist token)
      */
-    @Operation(summary = "Dang xuat", description = "Vo hieu hoa token hien tai bang cach dua vao blacklist")
+    @Operation(summary = "Đăng xuất", description = "Vô hiệu hóa token hiện tại bằng cách đưa vào blacklist")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Dang xuat thanh cong")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Đăng xuất thành công")
     })
     @SecurityRequirements
     @PostMapping("/logout")

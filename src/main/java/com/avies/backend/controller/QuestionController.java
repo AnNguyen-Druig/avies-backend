@@ -21,9 +21,9 @@ import java.net.URI;
 import java.util.List;
 
 /**
- * API CRUD cau hoi danh cho Admin va Giang vien.
+ * API CRUD câu hỏi dành cho Admin và Giảng viên.
  */
-@Tag(name = "Questions", description = "Ngan hang cau hoi van dap: tao thu cong, sinh tu dong AI, tim kiem, cap nhat, xoa")
+@Tag(name = "Questions", description = "Ngân hàng câu hỏi vấn đáp: tạo thủ công, sinh tự động AI, tìm kiếm, cập nhật, xóa")
 @RestController
 @RequestMapping({"/questions"})
 @RequiredArgsConstructor
@@ -33,12 +33,12 @@ public class QuestionController {
 
     QuestionService questionService;
 
-    @Operation(summary = "Sinh cau hoi AI tu dong (RAG)",
-            description = "Dung RAG pipeline: Embedding keyword -> Tim tai lieu lien quan qua pgvector -> GPT-4o/Gemini sinh cau hoi + rubric")
+    @Operation(summary = "Sinh câu hỏi AI tự động (RAG)",
+            description = "Dùng RAG pipeline: Embedding keyword -> Tìm tài liệu liên quan qua pgvector -> GPT-4o/Gemini sinh câu hỏi + rubric")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Sinh thanh cong, tra ve danh sach cau hoi"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Request khong hop le"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "AI service khong kha dung")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Sinh thành công, trả về danh sách câu hỏi"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Yêu cầu không hợp lệ"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "Dịch vụ AI không khả dụng")
     })
     @PostMapping("/generate")
     public ResponseEntity<ApiResponse<List<QuestionResponse>>> generate(
@@ -46,15 +46,15 @@ public class QuestionController {
         List<QuestionResponse> questions = questionService.generateQuestions(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.<List<QuestionResponse>>builder()
-                        .message("Sinh cau hoi va rubric thanh cong.")
+                        .message("Sinh câu hỏi và rubric thành công.")
                         .result(questions)
                         .build());
     }
 
-    @Operation(summary = "Tao cau hoi thu cong", description = "Giang vien hoac Admin tao cau hoi van dap thu cong")
+    @Operation(summary = "Tạo câu hỏi thủ công", description = "Giảng viên hoặc Admin tạo câu hỏi vấn đáp thủ công")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Tao thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Du lieu khong hop le")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Tạo thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Dữ liệu không hợp lệ")
     })
     @PostMapping
     public ResponseEntity<ApiResponse<QuestionResponse>> create(
@@ -64,9 +64,9 @@ public class QuestionController {
                 .body(ApiResponse.<QuestionResponse>builder().result(question).build());
     }
 
-    @Operation(summary = "Tim kiem cau hoi", description = "Loc va phan trang cau hoi theo tieu chi: mon hoc, bloom level, trang thai, nguon...")
+    @Operation(summary = "Tìm kiếm câu hỏi", description = "Lọc và phân trang câu hỏi theo tiêu chí: môn học, bloom level, trạng thái, nguồn...")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Ket qua tim kiem")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Kết quả tìm kiếm")
     })
     @GetMapping
     public ApiResponse<PageResponse<QuestionSummaryResponse>> search(
@@ -75,38 +75,55 @@ public class QuestionController {
                 .result(questionService.searchQuestions(request)).build();
     }
 
-    @Operation(summary = "Lay chi tiet cau hoi", description = "Tra ve day du thong tin cau hoi bao gom rubric")
+    @Operation(summary = "Lấy chi tiết câu hỏi", description = "Trả về đầy đủ thông tin câu hỏi bao gồm rubric")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Thong tin cau hoi"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Khong tim thay cau hoi")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Thông tin câu hỏi"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Không tìm thấy câu hỏi")
     })
     @GetMapping("/{id}")
     public ApiResponse<QuestionResponse> get(
-            @Parameter(description = "ID cua cau hoi") @PathVariable("id") @Positive Long id) {
+            @Parameter(description = "ID của câu hỏi") @PathVariable("id") @Positive Long id) {
         return ApiResponse.<QuestionResponse>builder().result(questionService.getQuestion(id)).build();
     }
 
-    @Operation(summary = "Cap nhat cau hoi", description = "Cap nhat mot phan hoac toan bo cau hoi (PATCH)")
+    @Operation(summary = "Cập nhật câu hỏi", description = "Cập nhật một phần hoặc toàn bộ câu hỏi (PATCH)")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Cap nhat thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Khong tim thay cau hoi")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Cập nhật thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Không tìm thấy câu hỏi")
     })
     @PatchMapping("/{id}")
     public ApiResponse<QuestionResponse> update(
-            @Parameter(description = "ID cua cau hoi") @PathVariable("id") @Positive Long id,
+            @Parameter(description = "ID của câu hỏi") @PathVariable("id") @Positive Long id,
             @Valid @RequestBody QuestionUpdateRequest request) {
         return ApiResponse.<QuestionResponse>builder().result(questionService.updateQuestion(id, request)).build();
     }
 
-    @Operation(summary = "Xoa cau hoi", description = "Xoa ban nhap chua su dung. Yeu cau lap lai van thanh cong neu tai nguyen da mat.")
+    @Operation(summary = "Phê duyệt câu hỏi", description = "Phê duyệt câu hỏi vào ngân hàng chính thức (chuyển trạng thái sang APPROVED)")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Xoa thanh cong"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Cau hoi da duoc su dung trong bai thi, khong the xoa")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Phê duyệt thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Chưa xác thực"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Không có quyền phê duyệt"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Không tìm thấy câu hỏi"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Câu hỏi đã bị lưu trữ")
+    })
+    @RequestMapping(value = "/{id}/approve", method = {RequestMethod.POST, RequestMethod.PATCH})
+    public ApiResponse<QuestionResponse> approve(
+            @Parameter(description = "ID của câu hỏi") @PathVariable("id") @Positive Long id) {
+        return ApiResponse.<QuestionResponse>builder()
+                .message("Phê duyệt câu hỏi thành công.")
+                .result(questionService.approveQuestion(id))
+                .build();
+    }
+
+    @Operation(summary = "Xóa câu hỏi", description = "Xóa bản nháp chưa sử dụng. Yêu cầu lặp lại vẫn thành công nếu tài nguyên đã mất.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Xóa thành công"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Câu hỏi đã được sử dụng trong bài thi, không thể xóa")
     })
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(
-            @Parameter(description = "ID cua cau hoi") @PathVariable("id") @Positive Long id) {
+            @Parameter(description = "ID của câu hỏi") @PathVariable("id") @Positive Long id) {
         questionService.deleteQuestion(id);
-        return ApiResponse.<Void>builder().message("Cau hoi khong con ton tai.").build();
+        return ApiResponse.<Void>builder().message("Câu hỏi không còn tồn tại.").build();
     }
 }
