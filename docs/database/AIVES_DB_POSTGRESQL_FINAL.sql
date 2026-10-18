@@ -1,7 +1,8 @@
 -- ============================================================
 -- AIVES Database Initialization - PostgreSQL / Supabase
--- Version: 2026-10-05 (Question CRUD - đề xuất, chưa áp dụng database)
--- Database đã tồn tại: dùng migrations/20261005_question_crud.sql sau khi được duyệt.
+-- Version: 2026-10-18 (Feature 2 P0.3 - file khởi tạo, chưa áp dụng Supabase)
+-- Database đã tồn tại: dùng migration mới tương ứng sau review và backup.
+-- Feature 2: migrations/20261016_feature2_exam_foundation.sql; không chạy lại file này.
 -- CREATE TABLE IF NOT EXISTS trong file khởi tạo không nâng cấp bảng đã tồn tại.
 --
 -- Design baseline:
@@ -364,7 +365,20 @@ CREATE TABLE IF NOT EXISTS exam_sessions (
     max_follow_ups INT NOT NULL DEFAULT 2
         CHECK (max_follow_ups >= 0),
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- Nullable cho dữ liệu cũ; service ở bước sau yêu cầu lịch cho phiên mới.
+    scheduled_start_at TIMESTAMPTZ,
+    scheduled_end_at TIMESTAMPTZ,
+    slot_duration_minutes INTEGER,
+
+    CONSTRAINT ck_exam_session_schedule CHECK (
+        (scheduled_start_at IS NULL AND scheduled_end_at IS NULL)
+        OR (scheduled_start_at IS NOT NULL AND scheduled_end_at IS NOT NULL
+            AND scheduled_end_at > scheduled_start_at)
+    ),
+    CONSTRAINT ck_exam_session_slot_duration
+        CHECK (slot_duration_minutes IS NULL OR slot_duration_minutes > 0)
 );
 
 
@@ -399,6 +413,19 @@ CREATE TABLE IF NOT EXISTS student_exams (
 
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
+
+    -- Lịch dự kiến tách biệt thời gian thực tế; không tự suy diễn cho bản ghi cũ.
+    slot_order INTEGER,
+    scheduled_start_at TIMESTAMPTZ,
+    scheduled_end_at TIMESTAMPTZ,
+
+    CONSTRAINT ck_student_exam_slot_order CHECK (slot_order IS NULL OR slot_order > 0),
+    CONSTRAINT ck_student_exam_schedule CHECK (
+        (scheduled_start_at IS NULL AND scheduled_end_at IS NULL)
+        OR (scheduled_start_at IS NOT NULL AND scheduled_end_at IS NOT NULL
+            AND scheduled_end_at > scheduled_start_at)
+    ),
+    CONSTRAINT uq_student_exam_slot_order UNIQUE (session_id, slot_order),
 
     CONSTRAINT uq_exam_session_student
         UNIQUE (session_id, student_id),

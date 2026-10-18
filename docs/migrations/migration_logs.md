@@ -1,5 +1,15 @@
 # Nhật ký migration database
 
+## 2026-10-18 — Chuẩn bị Feature 2 / P0.3 (CHƯA áp dụng Supabase)
+
+- Tạo file `20261016_feature2_exam_foundation.sql` theo tên đã duyệt; ngày trong tên file không phải ngày thực thi.
+- Thêm sáu cột lịch nullable, bốn CHECK và UNIQUE `(session_id, slot_order)` thông thường; không backfill lịch hoặc thay đổi 20 constraint gốc.
+- Tạo verifier chỉ đọc `feature2_post_migration_check.sql`, đồng bộ SQL fresh install và mapping JPA.
+- Chi tiết safety, mapping, test và checklist review: [Feature 2 exam foundation](../business_rules/feature2-exam-foundation.md).
+- Chỉ thực thi trên PostgreSQL Docker tạm để kiểm thử. Chưa có người/giờ thực thi hoặc kết quả kiểm tra Supabase cho migration này.
+- Kết quả kiểm thử file ngày 18/10/2026: `mvn clean verify -Ppostgres-it` BUILD SUCCESS, 207 test đạt (57 test P0.3), không failure/error/skipped. Đây là xác minh cô lập, không phải nhật ký triển khai Supabase.
+- Người phụ trách chỉ ghi nhận triển khai sau backup, review metadata thực tế và chạy script được phê duyệt. Giữ nguyên lịch sử Question bên dưới.
+
 ## 2026-10-06 — Nền móng Question CRUD
 
 ### Thông tin thực hiện
@@ -60,3 +70,92 @@ Thời điểm ghi nhật ký không phải thời điểm thực thi migration.
 - Thành viên dùng cùng database Supabase không chạy lại migration; lấy phiên bản code đã thống nhất, refresh datasource trong IDE và kiểm tra cấu hình kết nối/schema `aives`.
 - Sau khi chốt phiên bản đã triển khai, thay đổi schema tiếp theo phải được ghi trong file migration mới. Không chạy SQL khởi tạo hoặc file backup lên database dùng chung để đồng bộ.
 - Bình luận đầu file migration còn ghi trạng thái đề xuất; nhật ký này ghi nhận việc Ân đã thực thi. Không sửa lịch sử SQL đã áp dụng chỉ để cập nhật trạng thái triển khai.
+
+
+## 2026-10-18 — Feature 2 Exam Foundation Migration
+
+### 1. Thông tin triển khai
+
+| Mục | Giá trị                                           |
+|---|---------------------------------------------------|
+| Project | AIVES — SWD392                                    |
+| Ngày triển khai | 2026-10-18                                        |
+| Giờ triển khai | 12h AM                                            |
+| Người thực hiện | Nguyễn Trần Đạt Ân                                |
+| Nền tảng | Supabase Dashboard — SQL Editor                   |
+| Database | `postgres`                                        |
+| Schema | `aives`                                           |
+| PostgreSQL version | 17.6                                              |
+| Branch Backend | `dev/An`                                          |
+| Migration file | `20261016_feature2_exam_foundation.sql`           |
+| Verification file | `feature2_post_migration_check.sql`               |
+| Phương pháp | Manual SQL migration với transaction BEGIN/COMMIT |
+| Kết quả | SUCCESS                                           |
+
+### 2. Backup trước migration
+
+- Đã export schema `aives` kèm dữ liệu bằng IntelliJ và `pg_dump`.
+- Backup file: `postgres_aws_0_ap_northeast_2_pooler_supabase_com-2026_10_18_22_06_56-dump.sql`.
+- Định dạng: PostgreSQL Custom Archive, dù file có phần mở rộng `.sql`.
+- File backup được lưu riêng, không commit lên Git.
+- Đã kiểm tra archive theo quy trình pre-deployment.
+- Chưa thực hiện thử restore hoàn chỉnh; không xem backup là đã được xác minh khả năng khôi phục đầy đủ.
+
+### 3. Database changes
+
+Bổ sung 6 columns:
+
+**aives.exam_sessions**
+- `scheduled_start_at TIMESTAMPTZ NULL`
+- `scheduled_end_at TIMESTAMPTZ NULL`
+- `slot_duration_minutes INTEGER NULL`
+
+**aives.student_exams**
+- `slot_order INTEGER NULL`
+- `scheduled_start_at TIMESTAMPTZ NULL`
+- `scheduled_end_at TIMESTAMPTZ NULL`
+
+Bổ sung 5 constraints:
+
+- `ck_exam_session_schedule`
+- `ck_exam_session_slot_duration`
+- `ck_student_exam_schedule`
+- `ck_student_exam_slot_order`
+- `uq_student_exam_slot_order`
+
+Không tạo bảng mới, không xóa cột và không chủ động thay đổi dữ liệu cũ.
+
+### 4. Kết quả Post-migration Verification
+
+| Tiêu chí | Kết quả |
+|---|---|
+| Migration SQL | SUCCESS |
+| Verification checks | 66/66 PASS |
+| Tổng columns của 3 bảng | 28 |
+| Tổng constraints của 3 bảng | 25 |
+| `exam_sessions` records | 1 → 1 |
+| `student_exams` records | 1 → 1 |
+| `student_exam_questions` records | 2 → 2 |
+| Dữ liệu lịch mới của bản ghi cũ | [Xác nhận NULL sau bước kiểm tra cuối] |
+
+Các kết quả trên được xác nhận thông qua Supabase SQL Editor.
+
+### 5. Backend Validation
+
+- Đã kiểm thử bằng JDK 21.
+- Maven build và automated tests thành công.
+- Testcontainers sử dụng PostgreSQL độc lập.
+- 207 automated tests PASS theo kết quả kiểm thử đã báo cáo.
+- Chưa thực hiện kiểm thử Feature 2 CRUD API hoặc luồng vấn đáp trên Supabase thật vì các chức năng này thuộc những bước triển khai tiếp theo.
+
+### 6. Trạng thái và lưu ý
+
+**Status: MIGRATION APPLIED — POSTCHECK PASSED**
+
+- Database Supabase đã áp dụng schema Feature 2 foundation.
+- Không cần chạy lại migration trên database dùng chung.
+- Các thành viên cần đồng bộ phiên bản Backend chứa Entity, Enum và Repository tương ứng.
+- Giữ nguyên cấu hình Hibernate `ddl-auto: none`.
+- Chưa triển khai Feature 2 CRUD hoặc Feature 3.
+
+**Next step:** P0.6 — Backend verification sau khi cập nhật database.

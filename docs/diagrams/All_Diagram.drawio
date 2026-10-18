@@ -1,4 +1,4 @@
-<mxfile host="Electron" pages="4">
+<mxfile host="Electron" pages="5">
   <diagram name="Class-Diagram" id="LeyaF5HfvpyAg0YpelC6">
     <mxGraphModel dx="5280" dy="2103" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
@@ -3167,6 +3167,44 @@
         </mxCell>
         <mxCell id="6uMzOeie9QBd0wC-Etl3-1" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="AI Service" vertex="1">
           <mxGeometry height="60" width="30" x="970" y="250" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="feature2-p03-20261018" name="Feature 2 P0.3 - Proposed foundation">
+    <mxGraphModel dx="1400" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="f2-root" />
+        <mxCell id="f2-layer" parent="f2-root" />
+        <mxCell id="f2-heading" parent="f2-layer" value="Feature 2 / P0.3 — 18/10/2026: thiết kế file, CHƯA triển khai Supabase" style="text;html=1;fontSize=18;fontStyle=1;align=left;" vertex="1">
+          <mxGeometry x="40" y="20" width="1400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="f2-users" parent="f2-layer" value="aives.users (hiện có)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1">
+          <mxGeometry x="40" y="90" width="300" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="f2-subjects" parent="f2-layer" value="aives.subjects (hiện có)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1">
+          <mxGeometry x="40" y="570" width="300" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="f2-questions" parent="f2-layer" value="aives.questions (hiện có) — không cascade xóa câu gốc" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1">
+          <mxGeometry x="1030" y="90" width="360" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="f2-session" parent="f2-layer" value="&lt;b&gt;ExamSession → aives.exam_sessions&lt;/b&gt;&lt;br&gt;PK id; FK lecturer_id → users; subject_id → subjects&lt;br&gt;status: UPCOMING / ONGOING / COMPLETED&lt;br&gt;Giữ title, max_main_questions, max_follow_ups, created_at&lt;hr&gt;&lt;b&gt;Cột mới (nullable, không default)&lt;/b&gt;&lt;br&gt;scheduled_start_at TIMESTAMPTZ&lt;br&gt;scheduled_end_at TIMESTAMPTZ&lt;br&gt;slot_duration_minutes INTEGER&lt;hr&gt;CHECK: hai mốc cùng NULL hoặc end &amp;gt; start&lt;br&gt;CHECK: duration NULL hoặc &amp;gt; 0" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1">
+          <mxGeometry x="40" y="230" width="380" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="f2-student-exam" parent="f2-layer" value="&lt;b&gt;StudentExam → aives.student_exams&lt;/b&gt;&lt;br&gt;PK id; FK session_id → exam_sessions; student_id → users&lt;br&gt;status: ASSIGNED / IN_PROGRESS / COMPLETED&lt;br&gt;Giữ điểm, feedback, audio và started_at/completed_at thực tế&lt;hr&gt;&lt;b&gt;Cột mới (nullable, không default)&lt;/b&gt;&lt;br&gt;slot_order INTEGER&lt;br&gt;scheduled_start_at TIMESTAMPTZ&lt;br&gt;scheduled_end_at TIMESTAMPTZ&lt;hr&gt;CHECK: hai mốc cùng NULL hoặc end &amp;gt; start&lt;br&gt;CHECK: slot_order NULL hoặc &amp;gt; 0&lt;br&gt;UNIQUE (session_id, slot_order): cho nhiều NULL&lt;br&gt;Giữ UNIQUE (session_id, student_id)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1">
+          <mxGeometry x="540" y="230" width="380" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="f2-link" parent="f2-layer" value="&lt;b&gt;StudentExamQuestion → aives.student_exam_questions&lt;/b&gt;&lt;br&gt;Không đổi cột/constraint&lt;hr&gt;PK id&lt;br&gt;FK student_exam_id → student_exams&lt;br&gt;FK question_id → questions&lt;br&gt;question_order INTEGER &amp;gt; 0&lt;br&gt;UNIQUE (student_exam_id, question_id)&lt;br&gt;UNIQUE (student_exam_id, question_order)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=12;fillColor=#f5f5f5;" vertex="1">
+          <mxGeometry x="1030" y="230" width="360" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="f2-owner-edge" parent="f2-layer" value="lecturer_id / RESTRICT" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;startArrow=ERone;" edge="1" source="f2-users" target="f2-session"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f2-student-edge" parent="f2-layer" value="student_id / RESTRICT" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;startArrow=ERone;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" edge="1" source="f2-users" target="f2-student-exam"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f2-subject-edge" parent="f2-layer" value="subject_id / RESTRICT" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;startArrow=ERone;" edge="1" source="f2-subjects" target="f2-session"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f2-session-edge" parent="f2-layer" value="session_id / CASCADE" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;startArrow=ERone;" edge="1" source="f2-session" target="f2-student-exam"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f2-exam-edge" parent="f2-layer" value="student_exam_id / CASCADE" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;startArrow=ERone;" edge="1" source="f2-student-exam" target="f2-link"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f2-question-edge" parent="f2-layer" value="question_id / RESTRICT" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;startArrow=ERone;" edge="1" source="f2-questions" target="f2-link"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f2-note" parent="f2-layer" value="6 FK giữ ON UPDATE CASCADE. Hành vi ON DELETE ghi trên cạnh. Java: LAZY, đơn hướng, không cascade remove. Dữ liệu legacy giữ NULL; P0.3 chưa có API/xếp lịch/chọn câu/snapshot. Chi tiết: docs/business_rules/feature2-exam-foundation.md" style="text;html=1;whiteSpace=wrap;align=left;" vertex="1">
+          <mxGeometry x="540" y="590" width="850" height="80" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -39,7 +39,7 @@ import java.util.UUID;
 @EnableTransactionManagement
 @EnableJpaRepositories(basePackageClasses = LearningMaterialRepository.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX,
-                pattern = ".*(Question|Rubric|LearningMaterialChunk|InvalidatedToken|RefreshToken).*"))
+                pattern = ".*(Question|Rubric|LearningMaterialChunk|InvalidatedToken|RefreshToken|ExamSession|StudentExam).*"))
 @Import({LearningMaterialController.class, LearningMaterialServiceImpl.class,
         LecturerSubjectAssignmentController.class, LecturerSubjectAssignmentServiceImpl.class,
         GlobalExceptionHandler.class, AssignmentExceptionHandler.class, SecurityConfig.class, CorsProperties.class})

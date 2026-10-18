@@ -39,7 +39,7 @@ import java.util.Map;
 @EnableTransactionManagement
 @EnableJpaRepositories(basePackageClasses = QuestionRepository.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX,
-                pattern = ".*(LearningMaterial|RefreshToken).*"))
+                pattern = ".*(LearningMaterial|RefreshToken|ExamSession|StudentExam).*"))
 @Import({QuestionController.class, AuthenticationController.class, QuestionServiceImpl.class,
         AuthenticationServiceImpl.class, SecurityConfig.class, CorsProperties.class,
         CustomJwtDecoder.class, QuestionExceptionHandler.class, GlobalExceptionHandler.class})

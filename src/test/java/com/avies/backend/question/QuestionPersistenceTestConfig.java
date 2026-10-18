@@ -23,7 +23,7 @@ import java.util.UUID;
 @EnableTransactionManagement
 @EnableJpaRepositories(basePackageClasses = QuestionRepository.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX,
-                pattern = ".*(LearningMaterial|InvalidatedToken|RefreshToken).*"))
+                pattern = ".*(LearningMaterial|InvalidatedToken|RefreshToken|ExamSession|StudentExam).*"))
 @Import(QuestionServiceImpl.class)
 public class QuestionPersistenceTestConfig {
     @Bean
