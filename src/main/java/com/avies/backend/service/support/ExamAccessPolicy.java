@@ -32,6 +32,27 @@ public class ExamAccessPolicy {
     @PersistenceContext
     private EntityManager entityManager;
 
+    /**
+     * Khóa nội bộ cho Start tương lai: không cấp quyền JWT thay caller và không đổi trạng thái.
+     * Caller tin cậy phải giữ transaction ghi và kiểm tra quyền trước khi sử dụng kết quả selection.
+     * Không dùng ownedForWrite vì STUDENT có thể là người gọi Start nhưng không phải lecturer owner.
+     */
+    public ExamSession lockForInternalExamOperation(Long id) {
+        ExamSession session = sessions.findForDisplay(id)
+                .orElseThrow(() -> new AppException(ErrorCode.EXAM_SESSION_NOT_FOUND));
+        Long ownerId = session.getLecturer().getId();
+        Long subjectId = session.getSubject().getId();
+        users.tryLockForExamSessionWrite(ownerId)
+                .orElseThrow(() -> new AppException(ErrorCode.EXAM_SESSION_CONFLICT));
+        if (subjects.findAllForAssignment(List.of(subjectId)).isEmpty())
+            throw new AppException(ErrorCode.EXAM_SESSION_NOT_FOUND);
+        sessions.lockForManagement(id).orElseThrow(() -> new AppException(ErrorCode.EXAM_SESSION_NOT_FOUND));
+        entityManager.refresh(session);
+        if (!Objects.equals(ownerId, session.getLecturer().getId()) || !Objects.equals(subjectId, session.getSubject().getId()))
+            throw new AppException(ErrorCode.EXAM_SESSION_CONFLICT);
+        return session;
+    }
+
     /** Đối chiếu danh tính JWT với role trong DB; không tin role hoặc ID do request body gửi lên. */
     public User currentUser(String... allowedRoles) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

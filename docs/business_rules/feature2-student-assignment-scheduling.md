@@ -1,5 +1,7 @@
 # Feature 2 / P0 — Student Assignment & Basic Exam Slot Scheduling
 
+> Bổ sung sau đợt phân công: nền móng [Question Selection & Persistence](feature2-question-selection.md) đã được triển khai dưới dạng service nội bộ cần transaction ghi. Không thêm Start REST hoặc thay đổi các API phân công trong tài liệu này. Mục “chọn câu” còn lại bên dưới là phạm vi lịch sử khi bàn giao assignment; xem tài liệu mới cho trạng thái hiện tại.
+
 Ngày triển khai: 19/10/2026. Baseline đã kiểm tra: nhánh `dev/An`, HEAD `8e46f23`, worktree sạch trước đợt này.
 
 ## 1. Phạm vi

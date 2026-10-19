@@ -64,7 +64,19 @@ public enum ErrorCode {
     /** Không được xóa bài đã có câu hỏi, thời gian thực tế, điểm hoặc bằng chứng thi. */
     STUDENT_EXAM_IN_USE(1404, "Bài thi đã được sử dụng hoặc có dữ liệu cần bảo toàn", HttpStatus.CONFLICT),
     /** Không đổi cửa sổ lịch hoặc thời lượng slot khi phiên còn bất kỳ StudentExam nào. */
-    EXAM_SESSION_SCHEDULE_LOCKED(1405, "Không được đổi lịch phiên khi đã có sinh viên được gán", HttpStatus.CONFLICT);
+    EXAM_SESSION_SCHEDULE_LOCKED(1405, "Không được đổi lịch phiên khi đã có sinh viên được gán", HttpStatus.CONFLICT),
+    /** Không có đủ câu hợp lệ distinct, không giảm số lượng hoặc sinh AI thay thế. */
+    EXAM_QUESTION_POOL_INSUFFICIENT(1500, "Không đủ câu hỏi hợp lệ để chuẩn bị bài thi", HttpStatus.CONFLICT),
+    /** Các rubric chưa đáp ứng quy tắc chấm điểm để lập bộ đầy đủ. */
+    EXAM_QUESTION_RUBRIC_INVALID(1501, "Rubric chưa hợp lệ để chuẩn bị đầy đủ bộ câu hỏi", HttpStatus.CONFLICT),
+    /** Bộ đã lưu thiếu/thừa, trùng hoặc có thứ tự không liên tục; cần kiểm tra dữ liệu. */
+    EXAM_QUESTION_SET_INCONSISTENT(1502, "Bộ câu hỏi đã lưu không nhất quán; cần kiểm tra dữ liệu", HttpStatus.CONFLICT),
+    /** Câu hoặc rubric đổi sau khi đọc pool và trước khi hoàn tất lấy khóa. */
+    EXAM_QUESTION_ELIGIBILITY_CHANGED(1503, "Dữ liệu câu hỏi đã thay đổi; vui lòng thử lại", HttpStatus.CONFLICT),
+    /** Không tạo bộ mới cho bài đã bắt đầu hoặc phiên đã hoàn tất. */
+    EXAM_QUESTION_SELECTION_NOT_ALLOWED(1504, "Không thể chuẩn bị bộ câu hỏi với trạng thái hiện tại", HttpStatus.CONFLICT),
+    /** Lỗi khóa/ràng buộc chỉ trả mã an toàn, không lộ SQL hoặc dữ liệu chấm thi. */
+    EXAM_QUESTION_SELECTION_CONFLICT(1505, "Dữ liệu đang thay đổi; vui lòng tải lại và thử lại", HttpStatus.CONFLICT);
 
 
     private final int code;
