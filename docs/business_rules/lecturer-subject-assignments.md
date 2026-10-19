@@ -10,6 +10,8 @@
 
 Cập nhật bổ sung: Learning Materials đã có kiểm tra phân công tại service cho GET/upload. Sau thu hồi, lecturer nhận `403 / 1101` khi gọi các API này; xem [phân quyền Learning Materials](learning-material-access.md). Quyền sửa tiêu đề và xóa vẫn chỉ dành cho ADMIN.
 
+Feature 2 giữ chính sách riêng cho lịch sử phiên thi: thu hồi môn không xóa phiên và không chặn lecturer đọc phiên mình sở hữu; tạo/sửa/xóa vẫn cần phân công hiện hành. ADMIN chỉ đọc phiên trong đợt CRUD này. Xem [Exam Session CRUD](feature2-exam-session-crud.md).
+
 ## 2. Hợp đồng bốn API
 
 Các đường dẫn dưới đây là đường dẫn controller; ghép thêm context path của ứng dụng nếu có. Gửi `Authorization: Bearer <access_token>` và `Content-Type: application/json` cho POST.

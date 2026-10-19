@@ -1,0 +1,1564 @@
+{
+  "info": {
+    "name": "AIVES - Exam Session CRUD",
+    "description": "Bộ kiểm thử HTTP theo contract backend ngày 2026-10-19. Import vào Postman Desktop, điền lecturerToken và chạy theo thứ tự. Lịch tự sinh +7 ngày. Có thao tác ghi/xóa database backend đang kết nối: dùng tài khoản và dữ liệu test. Chỉ xóa phiên do request 02 tạo. Không tự tạo tài khoản, phân công, thu hồi hoặc sửa trạng thái DB. Các token phụ trống thì 4 request phân quyền tùy chọn bị skip, không phải PASS. Không nhập trùng tên collection variables ở Environment/Data; không chia sẻ token thật hoặc fixtureSessionId trong file export. Hướng dẫn: README-exam-session-crud.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "lecturerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "subjectId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otherLecturerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fixtureSessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fixtureLecturerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fixtureTitle",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fixtureStart",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fixtureEnd",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "A - CRUD: tạo, đọc, sửa",
+      "item": [
+        {
+          "name": "01 - Môn được phân công (200)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/lecturer-subject-assignments/my-subjects?page=0&size=100",
+            "description": "Dùng token LECTURER. Nếu subjectId trống, chọn môn đầu tiên trong 100 kết quả. Không tạo phân công; không có môn thì admin phải phân công trước.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "const data = pm.response.json();",
+                  "pm.test(\"Có result.items\", () => pm.expect(data.result.items).to.be.an(\"array\"));",
+                  "if (pm.response.code === 200 && Array.isArray(data.result?.items)) {",
+                  "  const items = data.result.items;",
+                  "  if (!String(pm.variables.get(\"subjectId\") || \"\").trim() && items.length) {",
+                  "    pm.collectionVariables.set(\"subjectId\", String(items[0].id));",
+                  "    console.info(\"Đã chọn subjectId =\", items[0].id);",
+                  "  }",
+                  "  pm.test(\"Đã chọn subjectId dương để tạo phiên\", () => pm.expect(Number(pm.variables.get(\"subjectId\"))).to.be.above(0));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 - Tạo phiên thi mới (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions",
+            "description": "Tạo bản ghi thực trong database mà backend đang kết nối. Chỉ bấm một lần mỗi lượt CRUD; POST không có idempotency key. Token quyết định chủ sở hữu. Tự sinh lịch +7 ngày theo UTC/Z.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{fixtureTitle}}\",\n  \"subjectId\": {{subjectId}},\n  \"scheduledStartAt\": \"{{fixtureStart}}\",\n  \"scheduledEndAt\": \"{{fixtureEnd}}\",\n  \"slotDurationMinutes\": 20,\n  \"maxMainQuestions\": 3,\n  \"maxFollowUps\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset(\"fixtureSessionId\");",
+                  "pm.collectionVariables.unset(\"fixtureLecturerId\");",
+                  "const missing = [\"lecturerToken\",\"subjectId\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }",
+                  "const start = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);",
+                  "pm.collectionVariables.set(\"fixtureTitle\", \"POSTMAN EXAM CRUD \" + Date.now() + \"-\" + Math.random().toString(36).slice(2, 8));",
+                  "pm.collectionVariables.set(\"fixtureStart\", start.toISOString());",
+                  "pm.collectionVariables.set(\"fixtureEnd\", new Date(start.getTime() + 3 * 60 * 60 * 1000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "if (pm.response.code === 201 && pm.response.json().result?.id) {",
+                  "  const r = pm.response.json().result;",
+                  "  pm.collectionVariables.set(\"fixtureSessionId\", String(r.id));",
+                  "  pm.collectionVariables.set(\"fixtureLecturerId\", String(r.lecturerId));",
+                  "  pm.test(\"Location đúng ID vừa tạo\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"/exam-sessions/\" + r.id));",
+                  "  pm.test(\"Đúng dữ liệu tạo và trạng thái UPCOMING\", () => {",
+                  "    pm.expect(r.title).to.eql(pm.variables.get(\"fixtureTitle\"));",
+                  "    pm.expect(r.subjectId).to.eql(Number(pm.variables.get(\"subjectId\")));",
+                  "    pm.expect(r.status).to.eql(\"UPCOMING\");",
+                  "    pm.expect(r.slotDurationMinutes).to.eql(20);",
+                  "    pm.expect(r.maxMainQuestions).to.eql(3);",
+                  "    pm.expect(r.maxFollowUps).to.eql(2);",
+                  "    pm.expect(Date.parse(r.scheduledStartAt)).to.eql(Date.parse(pm.variables.get(\"fixtureStart\")));",
+                  "    pm.expect(Date.parse(r.scheduledEndAt)).to.eql(Date.parse(pm.variables.get(\"fixtureEnd\")));",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 - Xem chi tiết (200)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "pm.test(\"Đúng phiên và chủ sở hữu\", () => {",
+                  "  const r = pm.response.json().result;",
+                  "  pm.expect(r.id).to.eql(Number(pm.variables.get(\"fixtureSessionId\")));",
+                  "  pm.expect(r.lecturerId).to.eql(Number(pm.variables.get(\"fixtureLecturerId\")));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 - Danh sách và bộ lọc (200)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions?page=0&size=20&subjectId={{subjectId}}&status=UPCOMING",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "pm.test(\"Đúng cấu trúc phân trang và phạm vi lecturer\", () => {",
+                  " const r = pm.response.json().result;",
+                  " pm.expect(r.items).to.be.an(\"array\");",
+                  " pm.expect(r.page).to.eql(0);",
+                  " pm.expect(r.size).to.eql(20);",
+                  " pm.expect(r.totalElements).to.be.at.least(1);",
+                  " pm.expect(r.totalPages).to.be.at.least(1);",
+                  " r.items.forEach(x => {",
+                  "   pm.expect(x.lecturerId).to.eql(Number(pm.variables.get(\"fixtureLecturerId\")));",
+                  "   pm.expect(x.subjectId).to.eql(Number(pm.variables.get(\"subjectId\")));",
+                  "   pm.expect(x.status).to.eql(\"UPCOMING\");",
+                  " });",
+                  " const ids = r.items.map(x => x.id);",
+                  " pm.expect(ids).to.eql([...ids].sort((a,b) => b-a));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 - PATCH hai trường, giữ trường bỏ qua (200)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{fixtureTitle}} UPDATED\",\n  \"maxFollowUps\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "pm.test(\"Cập nhật đúng, giữ lịch và cấu hình khác\", () => {",
+                  " const r = pm.response.json().result;",
+                  " pm.expect(r.id).to.eql(Number(pm.variables.get(\"fixtureSessionId\")));",
+                  " pm.expect(r.title).to.eql(pm.variables.get(\"fixtureTitle\") + \" UPDATED\");",
+                  " pm.expect(r.maxFollowUps).to.eql(0);",
+                  " pm.expect(r.slotDurationMinutes).to.eql(20);",
+                  " pm.expect(r.maxMainQuestions).to.eql(3);",
+                  " pm.expect(Date.parse(r.scheduledStartAt)).to.eql(Date.parse(pm.variables.get(\"fixtureStart\")));",
+                  " pm.expect(Date.parse(r.scheduledEndAt)).to.eql(Date.parse(pm.variables.get(\"fixtureEnd\")));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 - Gửi lại PATCH giống hệt (200)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{fixtureTitle}} UPDATED\",\n  \"maxFollowUps\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "pm.test(\"Giữ nguyên ID và giá trị\", () => {",
+                  " const r = pm.response.json().result;",
+                  " pm.expect(r.id).to.eql(Number(pm.variables.get(\"fixtureSessionId\")));",
+                  " pm.expect(r.title).to.eql(pm.variables.get(\"fixtureTitle\") + \" UPDATED\");",
+                  " pm.expect(r.maxFollowUps).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 - GET xác nhận đã lưu (200)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "pm.test(\"Dữ liệu đã lưu đúng\", () => {",
+                  " const r = pm.response.json().result;",
+                  " pm.expect(r.title).to.eql(pm.variables.get(\"fixtureTitle\") + \" UPDATED\");",
+                  " pm.expect(r.maxFollowUps).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "B - Validation và xác thực",
+      "item": [
+        {
+          "name": "08 - PATCH rỗng (400/1002)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1002\", () => pm.expect(pm.response.json().code).to.eql(1002));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 - PATCH null (400/1002)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1002\", () => pm.expect(pm.response.json().code).to.eql(1002));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 - Không được đổi status (400/1002)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ONGOING\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1002\", () => pm.expect(pm.response.json().code).to.eql(1002));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 - Không được đổi subjectId (400/1002)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"subjectId\": {{subjectId}}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1002\", () => pm.expect(pm.response.json().code).to.eql(1002));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 - Không nhận số nguyên dạng chuỗi (400/1002)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotDurationMinutes\": \"20\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1002\", () => pm.expect(pm.response.json().code).to.eql(1002));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13 - Không nhận số âm (400/1002)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"maxFollowUps\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1002\", () => pm.expect(pm.response.json().code).to.eql(1002));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14 - Lịch quá khứ (400/1304)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scheduledStartAt\": \"2000-01-01T08:00:00+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1304\", () => pm.expect(pm.response.json().code).to.eql(1304));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15 - Kết thúc bằng bắt đầu (400/1304)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scheduledEndAt\": \"{{fixtureStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1304\", () => pm.expect(pm.response.json().code).to.eql(1304));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16 - Thời gian thiếu offset (400/1002)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scheduledStartAt\": \"2099-01-01T08:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1002\", () => pm.expect(pm.response.json().code).to.eql(1002));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17 - size vượt 100 (400/1002)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions?page=0&size=101",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1002\", () => pm.expect(pm.response.json().code).to.eql(1002));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18 - ID không dương (400/1002)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/0",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"API code 1002\", () => pm.expect(pm.response.json().code).to.eql(1002));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19 - Không gửi token (401/1003)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"API code 1003\", () => pm.expect(pm.response.json().code).to.eql(1003));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20 - Lỗi validation không làm thay đổi dữ liệu (200)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "pm.test(\"Các PATCH không hợp lệ không ghi dữ liệu\", () => {",
+                  " const r = pm.response.json().result;",
+                  " pm.expect(r.title).to.eql(pm.variables.get(\"fixtureTitle\") + \" UPDATED\");",
+                  " pm.expect(r.maxFollowUps).to.eql(0);",
+                  " pm.expect(r.slotDurationMinutes).to.eql(20);",
+                  " pm.expect(r.status).to.eql(\"UPCOMING\");",
+                  " pm.expect(Date.parse(r.scheduledStartAt)).to.eql(Date.parse(pm.variables.get(\"fixtureStart\")));",
+                  " pm.expect(Date.parse(r.scheduledEndAt)).to.eql(Date.parse(pm.variables.get(\"fixtureEnd\")));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "C - Phân quyền bổ sung (token trống sẽ SKIP)",
+      "item": [
+        {
+          "name": "21 - ADMIN xem danh sách (200, tùy chọn)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions?page=0&size=20",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"adminToken\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "pm.test(\"Có items\", () => pm.expect(pm.response.json().result.items).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22 - ADMIN không được sửa (403/1004, tùy chọn)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{fixtureTitle}} UPDATED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"adminToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"API code 1004\", () => pm.expect(pm.response.json().code).to.eql(1004));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23 - Lecturer khác không được xem (404/1300, tùy chọn)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "Token phải của tài khoản LECTURER khác, không phải token chủ sở hữu.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{otherLecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"otherLecturerToken\",\"fixtureSessionId\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"API code 1300\", () => pm.expect(pm.response.json().code).to.eql(1300));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "24 - STUDENT không được xem (403/1004, tùy chọn)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"studentToken\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"API code 1004\", () => pm.expect(pm.response.json().code).to.eql(1004));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "D - Xóa và kiểm tra sau xóa",
+      "item": [
+        {
+          "name": "25 - Xóa đúng phiên vừa tạo (200)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "Không sửa fixtureSessionId bằng ID dữ liệu thật. Chỉ xóa phiên do request 02 tạo, chưa có StudentExam.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"API code 1000\", () => pm.expect(pm.response.json().code).to.eql(1000));",
+                  "pm.test(\"Thông báo xóa thành công\", () => pm.expect(pm.response.json().message).to.eql(\"Đã xóa phiên thi chưa sử dụng.\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "26 - GET sau xóa (404/1300)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"API code 1300\", () => pm.expect(pm.response.json().code).to.eql(1300));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27 - DELETE lần hai (404/1300, không 500)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/exam-sessions/{{fixtureSessionId}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{lecturerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = [\"lecturerToken\",\"fixtureSessionId\",\"fixtureTitle\"].filter(k => !String(pm.variables.get(k) || \"\").trim());",
+                  "if (missing.length) { console.warn(\"SKIPPED: thiếu \" + missing.join(\", \")); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"API code 1300\", () => pm.expect(pm.response.json().code).to.eql(1300));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

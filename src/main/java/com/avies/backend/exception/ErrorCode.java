@@ -42,7 +42,17 @@ public enum ErrorCode {
     /** Tài khoản đích tồn tại nhưng không phải giảng viên. */
     ASSIGNMENT_NOT_LECTURER(1200, "Tài khoản được chọn không có vai trò LECTURER", HttpStatus.BAD_REQUEST),
     /** Phân công gặp thay đổi đồng thời hoặc dữ liệu tham chiếu không còn hợp lệ. */
-    ASSIGNMENT_CONFLICT(1201, "Phân công đang có thay đổi đồng thời; hãy tải lại và thử lại", HttpStatus.CONFLICT);
+    ASSIGNMENT_CONFLICT(1201, "Phân công đang có thay đổi đồng thời; hãy tải lại và thử lại", HttpStatus.CONFLICT),
+    /** Phiên không tồn tại hoặc không thuộc quyền sở hữu được xem. */
+    EXAM_SESSION_NOT_FOUND(1300, "Không tìm thấy phiên thi", HttpStatus.NOT_FOUND),
+    /** Chỉ phiên UPCOMING mới có thể sửa hoặc xóa. */
+    EXAM_SESSION_NOT_EDITABLE(1301, "Chỉ được sửa hoặc xóa phiên thi UPCOMING", HttpStatus.CONFLICT),
+    /** Bài thi đã gắn hoặc bắt đầu khiến thao tác thay đổi không còn an toàn. */
+    EXAM_SESSION_IN_USE(1302, "Phiên thi đã có bài thi liên quan không cho phép thao tác này", HttpStatus.CONFLICT),
+    /** Khóa hoặc dữ liệu phiên thi gặp xung đột; không lộ SQL cho client. */
+    EXAM_SESSION_CONFLICT(1303, "Phiên thi hoặc phân công đang thay đổi; hãy tải lại và thử lại", HttpStatus.CONFLICT),
+    /** Trạng thái cuối sau khi gộp PATCH có lịch hoặc giới hạn không hợp lệ. */
+    EXAM_SESSION_INVALID_SCHEDULE(1304, "Lịch thi phải đầy đủ, bắt đầu trong tương lai, kết thúc sau bắt đầu và các giới hạn phải hợp lệ", HttpStatus.BAD_REQUEST);
 
 
     private final int code;

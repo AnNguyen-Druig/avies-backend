@@ -23,4 +23,13 @@ public interface StudentExamRepository extends JpaRepository<StudentExam, Long> 
 
     /** Hỗ trợ kiểm tra bài đang thực hiện bằng trạng thái truyền vào, chưa thêm quy tắc chuyển trạng thái. */
     boolean existsByStudentIdAndStatus(Long studentId, StudentExamStatus status);
+
+    /** Không cho xóa phiên đã có bài thi, kể cả bài mới ASSIGNED. */
+    boolean existsBySessionId(Long sessionId);
+
+    /** Dấu hiệu bài đã bắt đầu/hoàn tất, kể cả dữ liệu trạng thái và timestamp không đồng bộ. */
+    @Query("select case when count(e) > 0 then true else false end from StudentExam e "
+            + "where e.session.id = :sessionId and (e.status <> :notStarted "
+            + "or e.startedAt is not null or e.completedAt is not null)")
+    boolean hasStartedExam(@Param("sessionId") Long sessionId, @Param("notStarted") StudentExamStatus notStarted);
 }

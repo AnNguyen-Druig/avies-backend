@@ -17,6 +17,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
             "SELECT id FROM aives.users WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<Long> lockForSubjectAssignment(@Param("id") Long id);
 
+    /** Dùng cùng khóa user với phân công; ghi phiên thi bị xung đột sẽ trả 409 thay vì chờ ghi đè. */
+    @Query(value = "SELECT id FROM aives.users WHERE id = :id FOR UPDATE NOWAIT", nativeQuery = true)
+    Optional<Long> tryLockForExamSessionWrite(@Param("id") Long id);
+
     Optional<User> findByUsername(String username);
 
     Optional<User> findByEmail(String email);
