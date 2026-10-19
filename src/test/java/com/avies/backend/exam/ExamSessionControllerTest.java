@@ -2,10 +2,9 @@ package com.avies.backend.exam;
 
 import com.avies.backend.config.*;
 import com.avies.backend.controller.ExamSessionController;
-import com.avies.backend.dto.request.*;
 import com.avies.backend.dto.response.*;
 import com.avies.backend.entity.enums.ExamSessionStatus;
-import com.avies.backend.exception.*;
+import com.avies.backend.exception.exceptions.ExamSessionExceptionHandler;
 import com.avies.backend.service.ExamSessionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -29,7 +28,7 @@ import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import java.util.List;
 import java.util.stream.Stream;
-import static org.assertj.core.api.Assertions.*;
+
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;

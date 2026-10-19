@@ -1,7 +1,7 @@
 package com.avies.backend.assignment;
 
 import com.avies.backend.controller.LecturerSubjectAssignmentController;
-import com.avies.backend.exception.AssignmentExceptionHandler;
+import com.avies.backend.exception.exceptions.AssignmentExceptionHandler;
 import com.avies.backend.question.QuestionPostgresConfig;
 import com.avies.backend.service.impl.LecturerSubjectAssignmentServiceImpl;
 import com.jayway.jsonpath.JsonPath;

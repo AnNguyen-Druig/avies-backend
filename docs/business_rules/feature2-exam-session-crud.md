@@ -1,5 +1,7 @@
 # Feature 2 — Exam Session CRUD và quyền giảng viên–môn
 
+> Bổ sung P0 Student Assignment (19/10/2026): đã triển khai API gán/thu hồi và lịch slot trong [quy tắc Student Assignment & Scheduling](feature2-student-assignment-scheduling.md). Khi có bất kỳ StudentExam, PATCH không đổi scheduledStartAt/scheduledEndAt/slotDurationMinutes (cùng instant vẫn được); lỗi 409/1405. DELETE và bảo vệ bài đã bắt đầu giữ nguyên. Các mục ghi “chưa gán/chưa chia slot” dưới đây là phạm vi lịch sử của lần bàn giao CRUD trước đó; xem tài liệu mới để biết phạm vi hiện tại.
+
 Ngày triển khai: **19/10/2026**, nhánh `dev/An`. Chỉ backend, dừng ở CRUD phiên thi để review.
 
 ## 1. Phạm vi và baseline

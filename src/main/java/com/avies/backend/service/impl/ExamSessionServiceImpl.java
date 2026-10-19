@@ -11,13 +11,9 @@ import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
 import com.avies.backend.repository.*;
 import com.avies.backend.service.ExamSessionService;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
+import com.avies.backend.service.support.ExamAccessPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -39,15 +35,11 @@ public class ExamSessionServiceImpl implements ExamSessionService {
 
     private final ExamSessionRepository sessions;
     private final StudentExamRepository studentExams;
-    private final UserRepository users;
     private final SubjectRepository subjects;
     private final LecturerSubjectAssignmentRepository assignments;
 
-    /**
-     * Refresh sau khi lấy khóa để không kiểm tra bản entity cũ trong persistence context.
-     */
-    @PersistenceContext
-    private EntityManager entityManager;
+    /** Chính sách quyền và khóa dùng chung với batch gán/thu hồi sinh viên. */
+    private final ExamAccessPolicy access;
 
     /**
      * Tạo phiên UPCOMING trong môn hiện được phân công, chưa cần câu đã duyệt hoặc sinh viên.
@@ -85,11 +77,7 @@ public class ExamSessionServiceImpl implements ExamSessionService {
      */
     @Override
     public ExamSessionResponse get(Long id) {
-        User actor = currentActor(false);
-        ExamSession session = sessions.findForDisplay(id)
-                .orElseThrow(() -> new AppException(ErrorCode.EXAM_SESSION_NOT_FOUND));
-        requireVisible(session, actor);
-        return toResponse(session);
+        return toResponse(access.readableSession(id));
     }
 
     /**
@@ -102,6 +90,8 @@ public class ExamSessionServiceImpl implements ExamSessionService {
         requireUpcoming(session);
         if (studentExams.hasStartedExam(id, StudentExamStatus.ASSIGNED))
             throw new AppException(ErrorCode.EXAM_SESSION_IN_USE);
+        if (studentExams.existsBySessionId(id) && scheduleChanges(session, request))
+            throw new AppException(ErrorCode.EXAM_SESSION_SCHEDULE_LOCKED);
         if (request.isTitlePresent()) session.setTitle(normalizeTitle(request.getTitle()));
         if (request.isScheduledStartAtPresent()) session.setScheduledStartAt(request.getScheduledStartAt());
         if (request.isScheduledEndAtPresent()) session.setScheduledEndAt(request.getScheduledEndAt());
@@ -130,30 +120,14 @@ public class ExamSessionServiceImpl implements ExamSessionService {
      * Khóa user cùng hàng với phân công; kiểm tra lại role sau chờ để token cũ không vượt quyền.
      */
     private User lockWriter() {
-        User actor = currentActor(true);
-        users.tryLockForExamSessionWrite(actor.getId())
-                .orElseThrow(() -> new AppException(ErrorCode.UNAUTHENTICATED));
-        entityManager.refresh(actor);
-        requireRole(actor, true);
-        return actor;
+        return access.lockWriter();
     }
 
     /**
      * Khóa user → môn → phiên; từ chối nếu ownership/môn thay đổi giữa lần đọc và lần khóa.
      */
     private ExamSession ownedForWrite(Long id) {
-        User actor = lockWriter();
-        ExamSession session = sessions.findForDisplay(id)
-                .orElseThrow(() -> new AppException(ErrorCode.EXAM_SESSION_NOT_FOUND));
-        requireVisible(session, actor);
-        Long subjectId = session.getSubject().getId();
-        assignedSubject(actor, subjectId);
-        sessions.lockForManagement(id).orElseThrow(() -> new AppException(ErrorCode.EXAM_SESSION_NOT_FOUND));
-        entityManager.refresh(session);
-        requireVisible(session, actor);
-        if (!Objects.equals(subjectId, session.getSubject().getId()))
-            throw new AppException(ErrorCode.EXAM_SESSION_CONFLICT);
-        return session;
+        return access.ownedForWrite(id);
     }
 
     /**
@@ -171,34 +145,19 @@ public class ExamSessionServiceImpl implements ExamSessionService {
      * Danh tính lấy từ authentication, vai trò lấy từ user hiện hành trong database.
      */
     private User currentActor(boolean write) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()
-                || authentication instanceof AnonymousAuthenticationToken)
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        User actor = users.findByUsername(authentication.getName())
-                .orElseThrow(() -> new AppException(ErrorCode.UNAUTHENTICATED));
-        requireRole(actor, write);
-        return actor;
+        return write ? access.currentUser("LECTURER") : access.currentUser("LECTURER", "ADMIN");
     }
 
-    /**
-     * Cả authority JWT và role database phải cùng cấp quyền; ADMIN chỉ được đọc.
-     */
-    private void requireRole(User actor, boolean write) {
-        String role = actor.getRole() == null ? "" : actor.getRole().getCode();
-        boolean allowed = "LECTURER".equals(role) || (!write && "ADMIN".equals(role));
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        boolean matchingAuthority = authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(authority -> ("ROLE_" + role).equals(authority.getAuthority()));
-        if (!allowed || !matchingAuthority) throw new AppException(ErrorCode.UNAUTHORIZED);
+    /** Timestamp cùng instant được xem là không đổi dù cách biểu diễn offset khác nhau. */
+    private boolean scheduleChanges(ExamSession session, ExamSessionUpdateRequest request) {
+        return (request.isScheduledStartAtPresent() && !sameInstant(session.getScheduledStartAt(), request.getScheduledStartAt()))
+                || (request.isScheduledEndAtPresent() && !sameInstant(session.getScheduledEndAt(), request.getScheduledEndAt()))
+                || (request.isSlotDurationMinutesPresent() && !Objects.equals(session.getSlotDurationMinutes(), request.getSlotDurationMinutes()));
     }
 
-    /**
-     * Admin đọc toàn bộ, giảng viên chỉ đọc phiên của mình dù còn hay đã thu hồi môn.
-     */
-    private void requireVisible(ExamSession session, User actor) {
-        if (!isAdmin(actor) && !Objects.equals(session.getLecturer().getId(), actor.getId()))
-            throw new AppException(ErrorCode.EXAM_SESSION_NOT_FOUND);
+    /** So sánh nullable để không tự lấp lịch legacy khi đã có sinh viên. */
+    private boolean sameInstant(OffsetDateTime first, OffsetDateTime second) {
+        return first == null ? second == null : second != null && first.isEqual(second);
     }
 
     /**

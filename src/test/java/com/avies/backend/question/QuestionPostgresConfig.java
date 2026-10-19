@@ -6,7 +6,7 @@ import com.avies.backend.controller.QuestionController;
 import com.avies.backend.entity.*;
 import com.avies.backend.entity.Role;
 import com.avies.backend.exception.GlobalExceptionHandler;
-import com.avies.backend.exception.QuestionExceptionHandler;
+import com.avies.backend.exception.exceptions.QuestionExceptionHandler;
 import com.avies.backend.repository.QuestionRepository;
 import com.avies.backend.service.impl.AuthenticationServiceImpl;
 import com.avies.backend.service.impl.QuestionServiceImpl;

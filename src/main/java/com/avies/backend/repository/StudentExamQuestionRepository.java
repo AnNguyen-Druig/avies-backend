@@ -9,6 +9,9 @@ import org.springframework.data.repository.query.Param;
 
 /** Truy cập câu đã gán vào bài thi; chỉ cung cấp dữ liệu cho bước chọn câu sau này. */
 public interface StudentExamQuestionRepository extends JpaRepository<StudentExamQuestion, Long> {
+    /** Có câu đã gán thì không thu hồi bài, tránh cascade làm mất câu và transcript bên dưới. */
+    boolean existsByStudentExamId(Long studentExamId);
+
     /** Đọc câu đã gán đúng thứ tự thi, có phân trang. */
     Page<StudentExamQuestion> findByStudentExamIdOrderByQuestionOrderAscIdAsc(Long studentExamId, Pageable pageable);
 

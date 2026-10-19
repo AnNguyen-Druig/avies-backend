@@ -1,7 +1,12 @@
-package com.avies.backend.exception;
+package com.avies.backend.exception.exceptions;
 
 import com.avies.backend.controller.ExamSessionController;
+import com.avies.backend.controller.StudentAssignmentController;
+import com.avies.backend.controller.StudentExamController;
+import com.avies.backend.controller.EligibleStudentController;
 import com.avies.backend.dto.response.ApiResponse;
+import com.avies.backend.exception.AppException;
+import com.avies.backend.exception.ErrorCode;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.TypeMismatchException;
@@ -16,10 +21,11 @@ import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
-/** Chuẩn hóa lỗi riêng API phiên thi; không đổi exception contract của Feature 1. */
+/** Chuẩn hóa lỗi API phiên thi và phân công sinh viên; không đổi exception contract của Feature 1. */
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = ExamSessionController.class)
+@RestControllerAdvice(assignableTypes = {ExamSessionController.class, StudentAssignmentController.class,
+        StudentExamController.class, EligibleStudentController.class})
 public class ExamSessionExceptionHandler {
     /** Chỉ trả thông điệp ErrorCode đã kiểm soát, không đưa dữ liệu exception nội bộ ra client. */
     @ExceptionHandler(AppException.class)

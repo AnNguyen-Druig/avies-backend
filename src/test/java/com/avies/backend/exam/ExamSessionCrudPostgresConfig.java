@@ -6,10 +6,11 @@ import com.avies.backend.controller.ExamSessionController;
 import com.avies.backend.controller.LecturerSubjectAssignmentController;
 import com.avies.backend.entity.*;
 import com.avies.backend.entity.Role;
-import com.avies.backend.exception.ExamSessionExceptionHandler;
-import com.avies.backend.exception.AssignmentExceptionHandler;
+import com.avies.backend.exception.exceptions.ExamSessionExceptionHandler;
+import com.avies.backend.exception.exceptions.AssignmentExceptionHandler;
 import com.avies.backend.repository.ExamSessionRepository;
 import com.avies.backend.service.impl.ExamSessionServiceImpl;
+import com.avies.backend.service.support.ExamAccessPolicy;
 import com.avies.backend.service.impl.LecturerSubjectAssignmentServiceImpl;
 import jakarta.persistence.EntityManagerFactory;
 import org.springframework.context.annotation.*;
@@ -34,7 +35,7 @@ import java.util.Map;
 @EnableJpaRepositories(basePackageClasses = ExamSessionRepository.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX,
                 pattern = ".*(LearningMaterial|InvalidatedToken|RefreshToken).*"))
-@Import({ExamSessionController.class, ExamSessionServiceImpl.class, ExamSessionExceptionHandler.class,
+@Import({ExamSessionController.class, ExamSessionServiceImpl.class, ExamSessionExceptionHandler.class, ExamAccessPolicy.class,
         LecturerSubjectAssignmentController.class, LecturerSubjectAssignmentServiceImpl.class,
         AssignmentExceptionHandler.class, SecurityConfig.class, CorsProperties.class})
 public class ExamSessionCrudPostgresConfig {

@@ -1,7 +1,9 @@
-package com.avies.backend.exception;
+package com.avies.backend.exception.exceptions;
 
 import com.avies.backend.controller.LecturerSubjectAssignmentController;
 import com.avies.backend.dto.response.ApiResponse;
+import com.avies.backend.exception.AppException;
+import com.avies.backend.exception.ErrorCode;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.TypeMismatchException;

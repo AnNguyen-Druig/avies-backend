@@ -9,7 +9,7 @@ import com.avies.backend.entity.LecturerSubjectAssignment;
 import com.avies.backend.entity.Role;
 import com.avies.backend.entity.Subject;
 import com.avies.backend.entity.User;
-import com.avies.backend.exception.AssignmentExceptionHandler;
+import com.avies.backend.exception.exceptions.AssignmentExceptionHandler;
 import com.avies.backend.exception.GlobalExceptionHandler;
 import com.avies.backend.repository.LearningMaterialRepository;
 import com.avies.backend.service.impl.LearningMaterialServiceImpl;

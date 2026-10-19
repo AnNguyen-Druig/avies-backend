@@ -5,6 +5,7 @@ import com.avies.backend.controller.QuestionController;
 import com.avies.backend.dto.request.QuestionUpdateRequest;
 import com.avies.backend.dto.response.*;
 import com.avies.backend.exception.*;
+import com.avies.backend.exception.exceptions.QuestionExceptionHandler;
 import com.avies.backend.service.QuestionService;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
