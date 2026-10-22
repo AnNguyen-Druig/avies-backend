@@ -34,7 +34,7 @@ public class QuestionController {
     QuestionService questionService;
 
     @Operation(summary = "Sinh câu hỏi AI tự động (RAG)",
-            description = "Dùng RAG pipeline: Embedding keyword -> Tìm tài liệu liên quan qua pgvector -> GPT-4o/Gemini sinh câu hỏi + rubric")
+            description = "Dùng RAG pipeline: Embedding keyword -> Tìm tài liệu liên quan qua pgvector -> GPT-4o/Gemini sinh câu hỏi")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Sinh thành công, trả về danh sách câu hỏi"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Yêu cầu không hợp lệ"),
@@ -46,7 +46,7 @@ public class QuestionController {
         List<QuestionResponse> questions = questionService.generateQuestions(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.<List<QuestionResponse>>builder()
-                        .message("Sinh câu hỏi và rubric thành công.")
+                        .message("Sinh câu hỏi thành công.")
                         .result(questions)
                         .build());
     }

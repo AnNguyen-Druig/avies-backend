@@ -229,7 +229,9 @@ CREATE TABLE IF NOT EXISTS questions (
             'REMEMBER',
             'UNDERSTAND',
             'APPLY',
-            'ANALYZE'
+            'ANALYZE',
+            'EVALUATE',
+            'CREATE'
         )),
 
     is_ai_generated BOOLEAN NOT NULL DEFAULT FALSE,

@@ -350,7 +350,7 @@ public class QuestionServiceImpl implements QuestionService {
             throw new AppException(ErrorCode.AI_GENERATION_FAILED);
         }
 
-        // 5. Lưu câu hỏi & Rubric vào database với trạng thái DRAFT
+        // 5. Lưu câu hỏi vào database với trạng thái DRAFT
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         List<QuestionResponse> results = new ArrayList<>();
 
@@ -388,42 +388,6 @@ public class QuestionServiceImpl implements QuestionService {
                     .createdAt(now)
                     .updatedAt(now)
                     .build();
-
-            // Gắn Rubric và các tiêu chí
-            GeneratedQuestionDto.GeneratedRubricDto rubricDto = dto.getRubric();
-            String rubricTitle = (rubricDto != null && rubricDto.getTitle() != null && !rubricDto.getTitle().isBlank())
-                    ? rubricDto.getTitle()
-                    : "Rubric đánh giá câu hỏi: " + keyword;
-            String rubricDesc = (rubricDto != null && rubricDto.getDescription() != null)
-                    ? rubricDto.getDescription()
-                    : "Thang điểm 10 đánh giá câu trả lời vấn đáp của sinh viên.";
-
-            Rubric rubric = Rubric.builder()
-                    .question(question)
-                    .title(rubricTitle)
-                    .description(rubricDesc)
-                    .createdAt(now)
-                    .build();
-
-            if (rubricDto != null && rubricDto.getCriteria() != null && !rubricDto.getCriteria().isEmpty()) {
-                int order = 1;
-                for (GeneratedQuestionDto.GeneratedCriterionDto cDto : rubricDto.getCriteria()) {
-                    RubricCriterion criterion = RubricCriterion.builder()
-                            .rubric(rubric)
-                            .criterionText(requiredContent(cDto.getCriterionText()))
-                            .pointWeight(cDto.getPointWeight() != null ? cDto.getPointWeight() : new BigDecimal("2.50"))
-                            .isMandatory(cDto.getIsMandatory() != null ? cDto.getIsMandatory() : false)
-                            .displayOrder(cDto.getDisplayOrder() != null && cDto.getDisplayOrder() > 0 ? cDto.getDisplayOrder() : order++)
-                            .build();
-                    rubric.getCriteria().add(criterion);
-                }
-            } else {
-                rubric.getCriteria().add(RubricCriterion.builder().rubric(rubric).criterionText("Hiểu đúng định nghĩa và khái niệm cơ bản").pointWeight(new BigDecimal("4.00")).isMandatory(false).displayOrder(1).build());
-                rubric.getCriteria().add(RubricCriterion.builder().rubric(rubric).criterionText("Phân tích cơ chế và giải thích chi tiết").pointWeight(new BigDecimal("4.00")).isMandatory(false).displayOrder(2).build());
-                rubric.getCriteria().add(RubricCriterion.builder().rubric(rubric).criterionText("Kỹ năng diễn đạt và phản biện vấn đáp").pointWeight(new BigDecimal("2.00")).isMandatory(false).displayOrder(3).build());
-            }
-
-            question.setRubric(rubric);
 
             questionRepository.saveAndFlush(question);
             audit(question, actor, "CREATED");

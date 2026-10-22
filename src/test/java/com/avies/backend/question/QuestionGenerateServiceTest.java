@@ -87,7 +87,7 @@ class QuestionGenerateServiceTest {
     }
 
     @Test
-    @DisplayName("Sinh câu hỏi thành công: lưu Question & Rubric ở trạng thái DRAFT, sourceType = AI, isAiGenerated = true")
+    @DisplayName("Sinh câu hỏi thành công: lưu Question ở trạng thái DRAFT, sourceType = AI, isAiGenerated = true")
     void generateQuestionsSuccessFlow() {
         // Given
         when(assignmentRepository.existsByLecturerIdAndSubjectId(lecturer.getId(), subject.getId())).thenReturn(true);
@@ -105,33 +105,13 @@ class QuestionGenerateServiceTest {
         when(chunkRepository.searchSimilarChunks(eq(subject.getId()), anyString(), eq(5)))
                 .thenReturn(List.of(chunk1));
 
-        // Mock AI LLM response
-        GeneratedQuestionDto.GeneratedCriterionDto c1 = GeneratedQuestionDto.GeneratedCriterionDto.builder()
-                .criterionText("Nêu đúng định nghĩa cây nhị phân")
-                .pointWeight(new BigDecimal("5.00"))
-                .isMandatory(false)
-                .displayOrder(1)
-                .build();
-        GeneratedQuestionDto.GeneratedCriterionDto c2 = GeneratedQuestionDto.GeneratedCriterionDto.builder()
-                .criterionText("Giải thích các phép duyệt cây")
-                .pointWeight(new BigDecimal("5.00"))
-                .isMandatory(false)
-                .displayOrder(2)
-                .build();
-
-        GeneratedQuestionDto.GeneratedRubricDto rubricDto = GeneratedQuestionDto.GeneratedRubricDto.builder()
-                .title("Rubric chấm câu hỏi Cây nhị phân")
-                .description("Đánh giá sinh viên theo thang điểm 10.")
-                .criteria(List.of(c1, c2))
-                .build();
-
+        // Mock AI LLM response (không kèm rubric)
         GeneratedQuestionDto aiGenerated = GeneratedQuestionDto.builder()
                 .content("Anh/chị hãy định nghĩa cây nhị phân và trình bày các cách duyệt cây?")
                 .referenceAnswer("Cây nhị phân có tối đa 2 con (trái, phải). Các cách duyệt: Tiền thứ tự, Trung thứ tự, Hậu thứ tự.")
                 .bloomLevel(BloomLevel.UNDERSTAND)
                 .topics(Set.of("Cây nhị phân", "Cấu trúc dữ liệu"))
                 .answerTimeLimitSeconds(120)
-                .rubric(rubricDto)
                 .build();
 
         when(aiQuestionGenerationService.generateQuestions(eq(subject.getName()), eq("Cây nhị phân"), anyString(), eq(BloomLevel.UNDERSTAND), eq(1)))
@@ -140,9 +120,6 @@ class QuestionGenerateServiceTest {
         when(questionRepository.saveAndFlush(any(Question.class))).thenAnswer(invocation -> {
             Question q = invocation.getArgument(0);
             q.setId(50L);
-            if (q.getRubric() != null) {
-                q.getRubric().setId(60L);
-            }
             return q;
         });
 
@@ -165,11 +142,9 @@ class QuestionGenerateServiceTest {
         assertThat(res.getStatus()).isEqualTo(QuestionStatus.DRAFT);
         assertThat(res.getBloomLevel()).isEqualTo(BloomLevel.UNDERSTAND);
 
-        // Verify rubric details
-        assertThat(res.getRubricId()).isEqualTo(60L);
-        assertThat(res.getRubric()).isNotNull();
-        assertThat(res.getRubric().getTitle()).isEqualTo("Rubric chấm câu hỏi Cây nhị phân");
-        assertThat(res.getRubric().getCriteria()).hasSize(2);
+        // Verify rubric is null
+        assertThat(res.getRubricId()).isNull();
+        assertThat(res.getRubric()).isNull();
 
         // Verify repository interactions
         verify(openAiEmbeddingService).generateEmbeddings(List.of("Cây nhị phân"));

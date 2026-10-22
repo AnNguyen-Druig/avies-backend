@@ -176,7 +176,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
         return """
                 Bạn là giảng viên đại học phụ trách môn '%s'.
-                Hãy tạo đúng %d câu hỏi vấn đáp (oral exam) kèm đáp án tham khảo và rubric chấm điểm chi tiết dựa trên tài liệu học tập được cung cấp dưới đây.
+                Hãy tạo đúng %d câu hỏi vấn đáp (oral exam) kèm đáp án tham khảo dựa trên tài liệu học tập được cung cấp dưới đây.
                 
                 Từ khóa / Chủ đề yêu cầu: '%s'
                 Yêu cầu mức độ Bloom: %s
@@ -191,15 +191,6 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                 3. Mức độ Bloom (bloomLevel): Chỉ chấp nhận một trong 6 giá trị: 'REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE', 'CREATE'.
                 4. Danh sách chủ đề (topics): Gồm 1-3 từ khóa/nhãn liên quan.
                 5. Thời gian trả lời (answerTimeLimitSeconds): Từ 60 đến 300 giây (ví dụ 120, 180).
-                6. Rubric chấm điểm:
-                   - title: Tiêu đề ngắn gọn cho rubric.
-                   - description: Hướng dẫn ngắn cho giảng viên.
-                   - criteria: Danh sách 3-4 tiêu chí cụ thể.
-                     * criterionText: Nội dung chi tiết tiêu chí.
-                     * pointWeight: Điểm trọng số (số thập phân, ví dụ 3.0, 4.0).
-                       CỰC KỲ QUAN TRỌNG: Tổng điểm pointWeight của toàn bộ tiêu chí trong 1 rubric BẮT BUỘC PHẢI BẰNG CHÍNH XÁC 10.0 (thang điểm 10).
-                     * isMandatory: false
-                     * displayOrder: 1, 2, 3...
                 
                 Trả về DUY NHẤT một đối tượng JSON có cấu trúc chính xác như sau:
                 {
@@ -209,16 +200,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                       "referenceAnswer": "Dàn ý câu trả lời chuẩn...",
                       "bloomLevel": "UNDERSTAND",
                       "topics": ["Chủ đề A", "Chủ đề B"],
-                      "answerTimeLimitSeconds": 120,
-                      "rubric": {
-                        "title": "Rubric đánh giá câu hỏi...",
-                        "description": "Hướng dẫn chấm thi...",
-                        "criteria": [
-                          { "criterionText": "Tiêu chí 1", "pointWeight": 4.0, "isMandatory": false, "displayOrder": 1 },
-                          { "criterionText": "Tiêu chí 2", "pointWeight": 4.0, "isMandatory": false, "displayOrder": 2 },
-                          { "criterionText": "Tiêu chí 3", "pointWeight": 2.0, "isMandatory": false, "displayOrder": 3 }
-                        ]
-                      }
+                      "answerTimeLimitSeconds": 120
                     }
                   ]
                 }
@@ -333,111 +315,15 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             answerTimeLimit = 120;
         }
 
-        // Rubric
-        GeneratedQuestionDto.GeneratedRubricDto rubricDto = parseRubric(qNode.path("rubric"), content);
-
         return GeneratedQuestionDto.builder()
                 .content(content)
                 .referenceAnswer(referenceAnswer)
                 .bloomLevel(bloom)
                 .topics(topics)
                 .answerTimeLimitSeconds(answerTimeLimit)
-                .rubric(rubricDto)
                 .build();
     }
 
-    private GeneratedQuestionDto.GeneratedRubricDto parseRubric(JsonNode rubricNode, String questionContent) {
-        String title = rubricNode.path("title").asText("Rubric chấm điểm");
-        String description = rubricNode.path("description").asText("Đánh giá phần trả lời vấn đáp của sinh viên");
-
-        List<GeneratedQuestionDto.GeneratedCriterionDto> criteria = new ArrayList<>();
-        JsonNode criteriaNode = rubricNode.path("criteria");
-
-        if (criteriaNode.isArray() && !criteriaNode.isEmpty()) {
-            int order = 1;
-            for (JsonNode cNode : criteriaNode) {
-                String text = cNode.path("criterionText").asText("").trim();
-                if (text.isBlank()) continue;
-
-                double weightVal = cNode.path("pointWeight").asDouble(0.0);
-                BigDecimal weight = BigDecimal.valueOf(weightVal).setScale(2, RoundingMode.HALF_UP);
-                boolean mandatory = cNode.path("isMandatory").asBoolean(false);
-
-                criteria.add(GeneratedQuestionDto.GeneratedCriterionDto.builder()
-                        .criterionText(text)
-                        .pointWeight(weight)
-                        .isMandatory(mandatory)
-                        .displayOrder(order++)
-                        .build());
-            }
-        }
-
-        // Nếu criteria trống hoặc không hợp lệ -> sinh mặc định 3 tiêu chí
-        if (criteria.isEmpty()) {
-            criteria.add(GeneratedQuestionDto.GeneratedCriterionDto.builder()
-                    .criterionText("Nắm vững kiến thức và định nghĩa cốt lõi")
-                    .pointWeight(new BigDecimal("4.00"))
-                    .isMandatory(false)
-                    .displayOrder(1)
-                    .build());
-            criteria.add(GeneratedQuestionDto.GeneratedCriterionDto.builder()
-                    .criterionText("Giải thích, phân tích và liên hệ thực tế chính xác")
-                    .pointWeight(new BigDecimal("4.00"))
-                    .isMandatory(false)
-                    .displayOrder(2)
-                    .build());
-            criteria.add(GeneratedQuestionDto.GeneratedCriterionDto.builder()
-                    .criterionText("Kỹ năng diễn đạt, trả lời rõ ràng và tự tin")
-                    .pointWeight(new BigDecimal("2.00"))
-                    .isMandatory(false)
-                    .displayOrder(3)
-                    .build());
-        } else {
-            // Chuẩn hóa để tổng điểm các tiêu chí PHẢI CHÍNH XÁC = 10.00
-            normalizeCriteriaPointsToTen(criteria);
-        }
-
-        return GeneratedQuestionDto.GeneratedRubricDto.builder()
-                .title(title)
-                .description(description)
-                .criteria(criteria)
-                .build();
-    }
-
-    /**
-     * Chuẩn hóa tổng điểm của danh sách tiêu chí trong Rubric về chính xác 10.00
-     */
-    private void normalizeCriteriaPointsToTen(List<GeneratedQuestionDto.GeneratedCriterionDto> criteria) {
-        BigDecimal sum = BigDecimal.ZERO;
-        for (GeneratedQuestionDto.GeneratedCriterionDto c : criteria) {
-            if (c.getPointWeight() == null || c.getPointWeight().compareTo(BigDecimal.ZERO) <= 0) {
-                c.setPointWeight(new BigDecimal("1.00"));
-            }
-            sum = sum.add(c.getPointWeight());
-        }
-
-        BigDecimal targetTotal = new BigDecimal("10.00");
-        if (sum.compareTo(targetTotal) != 0) {
-            BigDecimal runningSum = BigDecimal.ZERO;
-            for (int i = 0; i < criteria.size(); i++) {
-                GeneratedQuestionDto.GeneratedCriterionDto c = criteria.get(i);
-                if (i == criteria.size() - 1) {
-                    // Tiêu chí cuối cùng gán bằng số dư còn lại để tổng đúng 10.00
-                    BigDecimal lastWeight = targetTotal.subtract(runningSum).setScale(2, RoundingMode.HALF_UP);
-                    if (lastWeight.compareTo(BigDecimal.ZERO) <= 0) {
-                        lastWeight = new BigDecimal("0.50");
-                    }
-                    c.setPointWeight(lastWeight);
-                } else {
-                    BigDecimal normalized = c.getPointWeight()
-                            .multiply(targetTotal)
-                            .divide(sum, 2, RoundingMode.HALF_UP);
-                    c.setPointWeight(normalized);
-                    runningSum = runningSum.add(normalized);
-                }
-            }
-        }
-    }
 
     private BloomLevel parseBloomLevel(String text) {
         if (text == null || text.isBlank()) return BloomLevel.UNDERSTAND;
