@@ -41,6 +41,7 @@ import java.util.Map;
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX,
                 pattern = ".*(LearningMaterial|RefreshToken|ExamSession|StudentExam).*"))
 @Import({QuestionController.class, AuthenticationController.class, QuestionServiceImpl.class,
+        com.avies.backend.service.support.SubjectAccessHelper.class,
         AuthenticationServiceImpl.class, SecurityConfig.class, CorsProperties.class,
         CustomJwtDecoder.class, QuestionExceptionHandler.class, GlobalExceptionHandler.class})
 public class QuestionPostgresConfig {

@@ -76,7 +76,17 @@ public enum ErrorCode {
     /** Không tạo bộ mới cho bài đã bắt đầu hoặc phiên đã hoàn tất. */
     EXAM_QUESTION_SELECTION_NOT_ALLOWED(1504, "Không thể chuẩn bị bộ câu hỏi với trạng thái hiện tại", HttpStatus.CONFLICT),
     /** Lỗi khóa/ràng buộc chỉ trả mã an toàn, không lộ SQL hoặc dữ liệu chấm thi. */
-    EXAM_QUESTION_SELECTION_CONFLICT(1505, "Dữ liệu đang thay đổi; vui lòng tải lại và thử lại", HttpStatus.CONFLICT);
+    EXAM_QUESTION_SELECTION_CONFLICT(1505, "Dữ liệu đang thay đổi; vui lòng tải lại và thử lại", HttpStatus.CONFLICT),
+    /** Rubric không tồn tại. */
+    RUBRIC_NOT_FOUND(1600, "Không tìm thấy rubric", HttpStatus.NOT_FOUND),
+    /** Môn học đã có rubric. */
+    RUBRIC_EXISTED(1601, "Môn học này đã có rubric", HttpStatus.CONFLICT),
+    /** Tiêu chí rubric không hợp lệ (tổng điểm != 10.00). */
+    RUBRIC_CRITERIA_INVALID(1602, "Tổng điểm các tiêu chí rubric phải bằng 10.00", HttpStatus.BAD_REQUEST),
+    /** Rubric chưa có tiêu chí nào. */
+    RUBRIC_CRITERIA_EMPTY(1603, "Rubric phải có ít nhất một tiêu chí đánh giá", HttpStatus.BAD_REQUEST),
+    /** Rubric đang được dùng không được xóa. */
+    RUBRIC_IN_USE(1604, "Rubric đang được sử dụng trong kỳ thi, không thể xóa", HttpStatus.CONFLICT);
 
 
     private final int code;

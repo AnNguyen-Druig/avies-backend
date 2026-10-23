@@ -51,6 +51,8 @@ class QuestionGenerateServiceTest {
 
     @BeforeEach
     void setUp() {
+        com.avies.backend.service.support.SubjectAccessHelper subjectAccessHelper =
+                new com.avies.backend.service.support.SubjectAccessHelper(userRepository, subjectRepository, assignmentRepository);
         questionService = new QuestionServiceImpl(
                 questionRepository,
                 subjectRepository,
@@ -59,7 +61,8 @@ class QuestionGenerateServiceTest {
                 auditRepository,
                 openAiEmbeddingService,
                 chunkRepository,
-                aiQuestionGenerationService
+                aiQuestionGenerationService,
+                subjectAccessHelper
         );
 
         Role lecturerRole = Role.builder().id(2L).code("LECTURER").name("Giảng viên").build();
@@ -178,6 +181,7 @@ class QuestionGenerateServiceTest {
     @Test
     @DisplayName("Ném lỗi SUBJECT_NOT_ASSIGNED khi giảng viên chưa được phân công môn học")
     void generateQuestionsThrowsWhenNotAssigned() {
+        when(subjectRepository.findById(subject.getId())).thenReturn(Optional.of(subject));
         when(assignmentRepository.existsByLecturerIdAndSubjectId(lecturer.getId(), subject.getId())).thenReturn(false);
 
         QuestionGenerateRequest request = QuestionGenerateRequest.builder()

@@ -287,17 +287,19 @@ CREATE INDEX IF NOT EXISTS idx_question_creator ON questions(created_by, created
 CREATE TABLE IF NOT EXISTS rubrics (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
-    -- UNIQUE enforces Question 1 ---- 0..1 Rubric.
-    question_id BIGINT NOT NULL UNIQUE
-        REFERENCES questions(id)
+    -- UNIQUE enforces Subject 1 ---- 0..1 Rubric.
+    subject_id BIGINT NOT NULL UNIQUE
+        REFERENCES subjects(id)
         ON UPDATE CASCADE
         ON DELETE CASCADE,
 
     title VARCHAR(255),
     description TEXT,
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 
 
 -- Conceptual/Class Diagram entity: RUBRIC_CRITERIA

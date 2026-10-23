@@ -22,10 +22,10 @@ public class Rubric {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;
 
-    // Quan hệ 1-1 với Question (question_id là UNIQUE)
+    // Quan hệ 1-1 với Subject (subject_id là UNIQUE)
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "question_id", nullable = false, unique = true)
-    Question question;
+    @JoinColumn(name = "subject_id", nullable = false, unique = true)
+    Subject subject;
 
     @Column(name = "title", length = 255)
     String title;
@@ -40,4 +40,20 @@ public class Rubric {
 
     @Column(name = "created_at", insertable = false, updatable = false)
     OffsetDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    @Builder.Default
+    OffsetDateTime updatedAt = OffsetDateTime.now();
+
+    @PrePersist
+    protected void onCreate() {
+        if (updatedAt == null) {
+            updatedAt = OffsetDateTime.now();
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = OffsetDateTime.now();
+    }
 }

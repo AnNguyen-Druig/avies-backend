@@ -20,9 +20,12 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RubricResponse {
     Long id;
-    Long questionId;
+    Long subjectId;
+    String subjectCode;
+    String subjectName;
     String title;
     String description;
     List<RubricCriterionResponse> criteria;
     OffsetDateTime createdAt;
+    OffsetDateTime updatedAt;
 }

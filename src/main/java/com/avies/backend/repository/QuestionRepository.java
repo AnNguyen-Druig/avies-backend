@@ -23,7 +23,7 @@ public interface QuestionRepository extends JpaRepository<Question, Long>, JpaSp
                    (q.archived_at IS NOT NULL) AS "archived", q.content AS "content",
                    r.id AS "rubricId", c.id AS "criterionId", c.criterion_text AS "criterionText",
                    c.point_weight AS "pointWeight", c.is_mandatory AS "mandatory", c.display_order AS "displayOrder"
-            FROM aives.questions q LEFT JOIN aives.rubrics r ON r.question_id=q.id
+            FROM aives.questions q LEFT JOIN aives.rubrics r ON r.subject_id=q.subject_id
             LEFT JOIN aives.rubric_criteria c ON c.rubric_id=r.id
             """;
 
@@ -43,14 +43,14 @@ public interface QuestionRepository extends JpaRepository<Question, Long>, JpaSp
      * Nạp các quan hệ đơn cần cho DTO, không fetch collection khi phân trang.
      */
     @Override
-    @EntityGraph(attributePaths = {"subject", "createdBy", "updatedBy", "rubric"})
+    @EntityGraph(attributePaths = {"subject", "createdBy", "updatedBy"})
     Page<Question> findAll(Specification<Question> specification, Pageable pageable);
 
     /**
      * Nạp chi tiết cùng các quan hệ cần hiển thị.
      */
     @Override
-    @EntityGraph(attributePaths = {"subject", "createdBy", "updatedBy", "rubric"})
+    @EntityGraph(attributePaths = {"subject", "createdBy", "updatedBy"})
     Optional<Question> findById(Long id);
 
     /**

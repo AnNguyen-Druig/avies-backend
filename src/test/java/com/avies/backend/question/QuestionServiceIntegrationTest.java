@@ -215,22 +215,13 @@ class QuestionServiceIntegrationTest {
         assertThat(service.getQuestion(second.getId()).getTopics()).containsExactlyInAnyOrder("Array", "HashTable");
     }
 
-    /** Xóa câu hỏi kéo theo rubric/tiêu chí riêng nhưng giữ nhật ký thao tác. */
+    /** Xóa câu hỏi bản nháp và giữ nhật ký thao tác. */
     @Test
-    void deletesOwnedRubricAndCriteriaWithDraft() {
-        QuestionResponse created = service.createQuestion(creation("Câu có rubric"));
-        Question question = questions.findById(created.getId()).orElseThrow();
-        Rubric rubric = Rubric.builder().question(question).title("Rubric riêng").build();
-        RubricCriterion criterion = RubricCriterion.builder().rubric(rubric).criterionText("Giải thích đúng")
-                .pointWeight(java.math.BigDecimal.TEN).build();
-        rubric.getCriteria().add(criterion);
-        question.setRubric(rubric);
-        entityManager.persist(rubric);
-        entityManager.flush();
-        Long rubricId = rubric.getId();
+    void deletesDraftQuestionAndKeepsAudit() {
+        QuestionResponse created = service.createQuestion(creation("Câu hỏi cần xóa"));
         service.deleteQuestion(created.getId());
         entityManager.clear();
-        assertThat(entityManager.find(Rubric.class, rubricId)).isNull();
+        assertThat(questions.findById(created.getId())).isEmpty();
         assertThat(audits.count()).isEqualTo(2);
     }
 

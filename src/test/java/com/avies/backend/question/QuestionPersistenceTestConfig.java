@@ -24,7 +24,7 @@ import java.util.UUID;
 @EnableJpaRepositories(basePackageClasses = QuestionRepository.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX,
                 pattern = ".*(LearningMaterial|InvalidatedToken|RefreshToken|ExamSession|StudentExam).*"))
-@Import(QuestionServiceImpl.class)
+@Import({QuestionServiceImpl.class, com.avies.backend.service.support.SubjectAccessHelper.class})
 public class QuestionPersistenceTestConfig {
     @Bean
     com.avies.backend.service.EmbeddingService openAiEmbeddingService() {

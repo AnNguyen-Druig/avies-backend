@@ -69,11 +69,6 @@ public class Question {
     @Column(name = "is_approved")
     Boolean isApproved;
 
-    /**
-     * Rubric riêng; chỉ được xóa theo câu hỏi khi nghiệp vụ cho phép.
-     */
-    @OneToOne(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true)
-    Rubric rubric;
 
     /**
      * Thời điểm tạo do service gán; không cập nhật lại.

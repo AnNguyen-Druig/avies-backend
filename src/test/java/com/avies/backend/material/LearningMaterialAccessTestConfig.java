@@ -41,6 +41,7 @@ import java.util.UUID;
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX,
                 pattern = ".*(Question|Rubric|LearningMaterialChunk|InvalidatedToken|RefreshToken|ExamSession|StudentExam).*"))
 @Import({LearningMaterialController.class, LearningMaterialServiceImpl.class,
+        com.avies.backend.service.support.SubjectAccessHelper.class,
         LecturerSubjectAssignmentController.class, LecturerSubjectAssignmentServiceImpl.class,
         GlobalExceptionHandler.class, AssignmentExceptionHandler.class, SecurityConfig.class, CorsProperties.class})
 public class LearningMaterialAccessTestConfig {

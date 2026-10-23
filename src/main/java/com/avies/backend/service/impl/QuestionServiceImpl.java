@@ -10,6 +10,7 @@ import com.avies.backend.repository.*;
 import com.avies.backend.service.QuestionGenerationService;
 import com.avies.backend.service.EmbeddingService;
 import com.avies.backend.service.QuestionService;
+import com.avies.backend.service.support.SubjectAccessHelper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -76,15 +77,19 @@ public class QuestionServiceImpl implements QuestionService {
     QuestionGenerationService aiQuestionGenerationService;
 
     /**
+     * Helper kiểm tra xác thực và phân công môn học.
+     */
+    SubjectAccessHelper subjectAccessHelper;
+
+
+    /**
      * Tạo bản nháp thủ công và nhật ký, không cho request quyết định tác giả hoặc trạng thái.
      */
     @Override
     @Transactional
     public QuestionResponse createQuestion(QuestionCreationRequest request) {
-        User actor = currentActor();
-        requireAssignment(actor, request.getSubjectId());
-        Subject subject = subjectRepository.findById(request.getSubjectId())
-                .orElseThrow(() -> new AppException(ErrorCode.SUBJECT_NOT_EXISTED));
+        User actor = subjectAccessHelper.getCurrentActor();
+        Subject subject = subjectAccessHelper.requireAssignmentAndGetSubject(actor, request.getSubjectId());
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         Question question = Question.builder()
                 .subject(subject).createdBy(actor).updatedBy(actor)
@@ -105,7 +110,7 @@ public class QuestionServiceImpl implements QuestionService {
      */
     @Override
     public QuestionResponse getQuestion(Long id) {
-        User actor = currentActor();
+        User actor = subjectAccessHelper.getCurrentActor();
         Question question = questionRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.QUESTION_NOT_FOUND));
         requireVisible(question, actor);
@@ -117,12 +122,12 @@ public class QuestionServiceImpl implements QuestionService {
      */
     @Override
     public PageResponse<QuestionSummaryResponse> searchQuestions(QuestionSearchRequest request) {
-        User actor = currentActor();
+        User actor = subjectAccessHelper.getCurrentActor();
         String[] ordering = request.getSort().split(",");
         Sort sort = Sort.by(Sort.Direction.fromString(ordering[1]), ordering[0]);
         if (!"id".equals(ordering[0])) sort = sort.and(Sort.by(Sort.Direction.ASC, "id"));
         Page<Question> page = questionRepository.findAll(
-                QuestionSpecifications.accessibleTo(actor.getId(), isAdmin(actor), request),
+                QuestionSpecifications.accessibleTo(actor.getId(), subjectAccessHelper.isAdmin(actor), request),
                 PageRequest.of(request.getPage(), request.getSize(), sort));
         return PageResponse.<QuestionSummaryResponse>builder()
                 .items(page.getContent().stream().map(this::toSummary).toList())
@@ -136,7 +141,7 @@ public class QuestionServiceImpl implements QuestionService {
     @Override
     @Transactional
     public QuestionResponse updateQuestion(Long id, QuestionUpdateRequest request) {
-        User actor = currentActor();
+        User actor = subjectAccessHelper.getCurrentActor();
         Question question = questionRepository.findForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.QUESTION_NOT_FOUND));
         requireEditable(question, actor);
@@ -175,7 +180,7 @@ public class QuestionServiceImpl implements QuestionService {
     @Override
     @Transactional
     public void deleteQuestion(Long id) {
-        User actor = currentActor();
+        User actor = subjectAccessHelper.getCurrentActor();
         Optional<Question> existing = questionRepository.findForUpdate(id);
         if (existing.isEmpty()) return;
         Question question = existing.get();
@@ -187,42 +192,10 @@ public class QuestionServiceImpl implements QuestionService {
     }
 
     /**
-     * Kiểm tra tài khoản còn tồn tại và hiện vẫn có vai trò được quản lý câu hỏi.
-     */
-    private User currentActor() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-        User actor = userRepository.findByUsername(authentication.getName())
-                .orElseThrow(() -> new AppException(ErrorCode.UNAUTHENTICATED));
-        if (actor.getRole() == null || (!isAdmin(actor) && !"LECTURER".equals(actor.getRole().getCode()))) {
-            throw new AppException(ErrorCode.UNAUTHORIZED);
-        }
-        return actor;
-    }
-
-    /**
-     * Xác định quyền quản trị theo dữ liệu tài khoản hiện hành.
-     */
-    private boolean isAdmin(User actor) {
-        return actor.getRole() != null && "ADMIN".equals(actor.getRole().getCode());
-    }
-
-    /**
-     * Bắt buộc giảng viên có phân công môn học, admin được quản lý toàn bộ.
-     */
-    private void requireAssignment(User actor, Long subjectId) {
-        if (!isAdmin(actor) && !assignmentRepository.existsByLecturerIdAndSubjectId(actor.getId(), subjectId)) {
-            throw new AppException(ErrorCode.SUBJECT_NOT_ASSIGNED);
-        }
-    }
-
-    /**
      * Cho phép xem câu của mình hoặc câu được duyệt đang hoạt động trong môn được phân công.
      */
     private void requireVisible(Question question, User actor) {
-        if (isAdmin(actor)) return;
+        if (subjectAccessHelper.isAdmin(actor)) return;
         boolean assigned = assignmentRepository.existsByLecturerIdAndSubjectId(actor.getId(), question.getSubject().getId());
         boolean owner = actor.getId().equals(question.getCreatedBy().getId());
         boolean published = question.getStatus() == QuestionStatus.APPROVED && question.getArchivedAt() == null;
@@ -234,7 +207,7 @@ public class QuestionServiceImpl implements QuestionService {
      */
     private void requireEditable(Question question, User actor) {
         requireVisible(question, actor);
-        if (!isAdmin(actor) && !actor.getId().equals(question.getCreatedBy().getId())) {
+        if (!subjectAccessHelper.isAdmin(actor) && !actor.getId().equals(question.getCreatedBy().getId())) {
             throw new AppException(ErrorCode.UNAUTHORIZED);
         }
         if (question.getStatus() != QuestionStatus.DRAFT || question.getArchivedAt() != null) {
@@ -299,10 +272,8 @@ public class QuestionServiceImpl implements QuestionService {
     @Override
     @Transactional
     public List<QuestionResponse> generateQuestions(QuestionGenerateRequest request) {
-        User actor = currentActor();
-        requireAssignment(actor, request.getSubjectId());
-        Subject subject = subjectRepository.findById(request.getSubjectId())
-                .orElseThrow(() -> new AppException(ErrorCode.SUBJECT_NOT_EXISTED));
+        User actor = subjectAccessHelper.getCurrentActor();
+        Subject subject = subjectAccessHelper.requireAssignmentAndGetSubject(actor, request.getSubjectId());
 
         String keyword = requiredContent(request.getKeyword());
         int count = (request.getCount() != null && request.getCount() > 0) ? Math.min(request.getCount(), 10) : 1;
@@ -406,10 +377,10 @@ public class QuestionServiceImpl implements QuestionService {
     @Override
     @Transactional
     public QuestionResponse approveQuestion(Long id) {
-        User actor = currentActor();
+        User actor = subjectAccessHelper.getCurrentActor();
         Question question = questionRepository.findForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.QUESTION_NOT_FOUND));
-        requireAssignment(actor, question.getSubject().getId());
+        subjectAccessHelper.requireAssignment(actor, question.getSubject().getId());
         if (question.getArchivedAt() != null) {
             throw new AppException(ErrorCode.QUESTION_NOT_EDITABLE);
         }
@@ -437,28 +408,6 @@ public class QuestionServiceImpl implements QuestionService {
      * Ánh xạ tường minh nhằm tránh lộ thuộc tính nhạy cảm hoặc vòng tham chiếu entity.
      */
     private QuestionResponse toResponse(Question question) {
-        RubricResponse rubricResponse = null;
-        if (question.getRubric() != null) {
-            Rubric r = question.getRubric();
-            List<RubricCriterionResponse> criteriaResponses = (r.getCriteria() == null) ? Collections.emptyList()
-                    : r.getCriteria().stream().map(c -> RubricCriterionResponse.builder()
-                    .id(c.getId())
-                    .criterionText(c.getCriterionText())
-                    .pointWeight(c.getPointWeight())
-                    .isMandatory(c.getIsMandatory())
-                    .displayOrder(c.getDisplayOrder())
-                    .build()).toList();
-
-            rubricResponse = RubricResponse.builder()
-                    .id(r.getId())
-                    .questionId(question.getId())
-                    .title(r.getTitle())
-                    .description(r.getDescription())
-                    .criteria(criteriaResponses)
-                    .createdAt(r.getCreatedAt())
-                    .build();
-        }
-
         return QuestionResponse.builder().id(question.getId())
                 .subjectId(question.getSubject().getId()).subjectName(question.getSubject().getName())
                 .content(question.getContent()).referenceAnswer(question.getReferenceAnswer())
@@ -469,8 +418,8 @@ public class QuestionServiceImpl implements QuestionService {
                 .updatedById(question.getUpdatedBy() == null ? null : question.getUpdatedBy().getId())
                 .createdAt(question.getCreatedAt()).updatedAt(question.getUpdatedAt())
                 .archivedAt(question.getArchivedAt()).version(question.getVersion())
-                .rubricId(question.getRubric() == null ? null : question.getRubric().getId())
-                .rubric(rubricResponse).build();
+                .rubricId(null)
+                .rubric(null).build();
     }
 
     /**
@@ -485,6 +434,6 @@ public class QuestionServiceImpl implements QuestionService {
                 .bloomLevel(question.getBloomLevel()).sourceType(question.getSourceType()).status(question.getStatus())
                 .createdById(question.getCreatedBy().getId()).createdByName(question.getCreatedBy().getFullName())
                 .createdAt(question.getCreatedAt()).archivedAt(question.getArchivedAt())
-                .hasRubric(question.getRubric() != null).build();
+                .hasRubric(false).build();
     }
 }

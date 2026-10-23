@@ -13,12 +13,18 @@ import org.springframework.data.repository.query.Param;
 @Repository
 public interface RubricRepository extends JpaRepository<Rubric, Long> {
     /** FOR UPDATE rubric chặn insert criterion qua FK KEY SHARE trong lúc kiểm tra tổng điểm. */
-    @Query(value = "SELECT id FROM aives.rubrics WHERE question_id IN (:questionIds) ORDER BY id FOR UPDATE NOWAIT", nativeQuery = true)
+    @Query(value = "SELECT r.id FROM aives.rubrics r JOIN aives.questions q ON r.subject_id = q.subject_id WHERE q.id IN (:questionIds) ORDER BY r.id FOR UPDATE NOWAIT", nativeQuery = true)
     List<Long> lockForQuestionSelection(@Param("questionIds") Collection<Long> questionIds);
+
+    /** FOR UPDATE rubric theo subject ID. */
+    @Query(value = "SELECT id FROM aives.rubrics WHERE subject_id = :subjectId ORDER BY id FOR UPDATE NOWAIT", nativeQuery = true)
+    List<Long> lockForSubject(@Param("subjectId") Long subjectId);
 
     /** Giữ nội dung/điểm của mọi criterion hiện có; khóa rubric bên trên bảo vệ cả membership. */
     @Query(value = "SELECT id FROM aives.rubric_criteria WHERE rubric_id IN (:rubricIds) ORDER BY id FOR SHARE NOWAIT", nativeQuery = true)
     List<Long> lockCriteriaForSelection(@Param("rubricIds") Collection<Long> rubricIds);
 
-    Optional<Rubric> findByQuestionId(Long questionId);
+    Optional<Rubric> findBySubjectId(Long subjectId);
+
+    boolean existsBySubjectId(Long subjectId);
 }
