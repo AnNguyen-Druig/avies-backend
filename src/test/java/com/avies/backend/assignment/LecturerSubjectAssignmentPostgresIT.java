@@ -162,7 +162,7 @@ class LecturerSubjectAssignmentPostgresIT {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"subjectId\":1,\"content\":\"Câu hỏi cần giữ\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         Number questionId = JsonPath.read(created, "$.result.id");
-        jdbc.update("INSERT INTO aives.rubrics(question_id,title) VALUES (?, 'Rubric cần giữ')", questionId.longValue());
+        jdbc.update("INSERT INTO aives.rubrics(subject_id,title) SELECT subject_id,'Rubric cần giữ' FROM aives.questions WHERE id=?", questionId.longValue());
         jdbc.update("INSERT INTO aives.rubric_criteria(rubric_id,criterion_text,point_weight) SELECT id,'Tiêu chí',10 FROM aives.rubrics");
         change("/revocations", 2, "[1]").andExpect(status().isOk());
         mvc.perform(get("/questions/" + questionId).header("Authorization", "Bearer " + lecturerToken))

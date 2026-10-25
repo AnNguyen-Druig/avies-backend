@@ -79,6 +79,7 @@ public class QuestionPostgresConfig {
             execute(connection, new ClassPathResource("question/legacy-question-schema.sql")
                     .getContentAsString(StandardCharsets.UTF_8));
             execute(connection, migration());
+            execute(connection, Files.readString(projectFile("docs/migrations/20261022_rubric_subject_migration.sql"), StandardCharsets.UTF_8));
         }
         return source;
     }

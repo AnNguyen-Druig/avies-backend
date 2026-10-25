@@ -11,7 +11,9 @@ public interface QuestionSelectionRow {
     /** Tên Bloom hiện lưu trong database. */ String getBloomLevel();
     /** Câu đã lưu trữ không còn được chọn mới. */ Boolean getArchived();
     /** Nội dung dùng kiểm tra đầy đủ, không trả qua DTO selection. */ String getContent();
-    /** Rubric riêng của câu, null nếu thiếu. */ Long getRubricId();
+    /** Đáp án nguồn để lưu cùng snapshot câu, không trả cho sinh viên. */ String getReferenceAnswer();
+    /** Giới hạn trả lời nguyên bản, cho phép chưa được cấu hình. */ Integer getAnswerTimeLimitSeconds();
+    /** Rubric hiện hành của môn, null nếu thiếu; không thay thế rubric đã chốt của phiên. */ Long getRubricId();
     /** ID tiêu chí, null nếu rubric rỗng. */ Long getCriterionId();
     /** Mô tả tiêu chí chấm, chỉ dùng nội bộ để kiểm tra. */ String getCriterionText();
     /** Điểm tối đa của tiêu chí. */ BigDecimal getPointWeight();

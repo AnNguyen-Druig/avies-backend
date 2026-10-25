@@ -52,7 +52,11 @@ public enum ErrorCode {
     /** Khóa hoặc dữ liệu phiên thi gặp xung đột; không lộ SQL cho client. */
     EXAM_SESSION_CONFLICT(1303, "Phiên thi hoặc phân công đang thay đổi; hãy tải lại và thử lại", HttpStatus.CONFLICT),
     /** Trạng thái cuối sau khi gộp PATCH có lịch hoặc giới hạn không hợp lệ. */
-    EXAM_SESSION_INVALID_SCHEDULE(1304, "Lịch thi phải đầy đủ, bắt đầu trong tương lai, kết thúc sau bắt đầu và các giới hạn phải hợp lệ", HttpStatus.BAD_REQUEST),
+    EXAM_SESSION_INVALID_SCHEDULE(1304, "Lịch thi phải đầy đủ, bắt đầu trong tương lai, kết thúc sau bắt đầu, tổng thời gian phiên không được nhỏ hơn thời gian mỗi sinh viên và các giới hạn phải hợp lệ", HttpStatus.BAD_REQUEST),
+    /** Môn phải có rubric đầy đủ/hợp lệ trước khi cho phép tạo phiên mới. */
+    EXAM_SESSION_RUBRIC_REQUIRED(1305, "Bạn phải tạo đầy đủ Rubrics cho môn", HttpStatus.BAD_REQUEST),
+    /** Thiếu câu hỏi chính hợp lệ khi tạo phiên; số tối thiểu lấy từ cấu hình Main. */
+    EXAM_SESSION_QUESTIONS_REQUIRED(1306, "Bạn phải tạo đủ %d số câu hỏi chính đã được APPROVED", HttpStatus.BAD_REQUEST),
     /** Bài thi không tồn tại hoặc không nằm trong quyền sở hữu được thao tác. */
     STUDENT_EXAM_NOT_FOUND(1400, "Không tìm thấy bài thi sinh viên", HttpStatus.NOT_FOUND),
     /** User đích đã tồn tại nhưng hiện không phải sinh viên. */
@@ -77,6 +81,20 @@ public enum ErrorCode {
     EXAM_QUESTION_SELECTION_NOT_ALLOWED(1504, "Không thể chuẩn bị bộ câu hỏi với trạng thái hiện tại", HttpStatus.CONFLICT),
     /** Lỗi khóa/ràng buộc chỉ trả mã an toàn, không lộ SQL hoặc dữ liệu chấm thi. */
     EXAM_QUESTION_SELECTION_CONFLICT(1505, "Dữ liệu đang thay đổi; vui lòng tải lại và thử lại", HttpStatus.CONFLICT),
+    /** Thiếu hoặc hỏng bản chụp lịch sử; không được backfill âm thầm từ nguồn hiện hành. */
+    EXAM_SNAPSHOT_UNAVAILABLE(1506, "Bản chụp bài thi thiếu hoặc không hợp lệ; cần kiểm tra dữ liệu", HttpStatus.CONFLICT),
+    /** Lượt thi không ở trạng thái cho phép bắt đầu hoặc hoàn thành. */
+    EXAM_LIFECYCLE_NOT_ALLOWED(1700, "Trạng thái bài thi không cho phép thực hiện thao tác này", HttpStatus.CONFLICT),
+    /** Thiếu lịch hoặc lịch lượt thi không khớp lưới slot của phiên. */
+    EXAM_LIFECYCLE_INVALID_SCHEDULE(1701, "Lịch lượt thi chưa hợp lệ; vui lòng liên hệ giảng viên", HttpStatus.CONFLICT),
+    /** Đồng hồ máy chủ quyết định cửa sổ thi, không tin thời gian từ trình duyệt. */
+    EXAM_OUTSIDE_SLOT(1702, "Chưa đến giờ thi hoặc đã hết khung giờ được phân công", HttpStatus.CONFLICT),
+    /** Feature 3 chưa lưu câu trả lời hợp lệ cho đầy đủ câu hỏi chính. */
+    EXAM_ANSWERS_NOT_READY(1703, "Chưa thể hoàn thành: hệ thống chưa lưu đầy đủ câu trả lời cho các câu hỏi chính", HttpStatus.CONFLICT),
+    /** Trạng thái và bằng chứng thực hiện không nhất quán; không tự sửa lịch sử. */
+    EXAM_LIFECYCLE_INCONSISTENT(1704, "Dữ liệu trạng thái bài thi không nhất quán; cần kiểm tra trước khi tiếp tục", HttpStatus.CONFLICT),
+    /** Chỉ đóng phiên khi đã đến hoặc qua giờ kết thúc dự kiến. */
+    EXAM_SESSION_NOT_ENDED(1705, "Chưa đến giờ kết thúc phiên thi nên chưa thể đóng phiên", HttpStatus.CONFLICT),
     /** Rubric không tồn tại. */
     RUBRIC_NOT_FOUND(1600, "Không tìm thấy rubric", HttpStatus.NOT_FOUND),
     /** Môn học đã có rubric. */

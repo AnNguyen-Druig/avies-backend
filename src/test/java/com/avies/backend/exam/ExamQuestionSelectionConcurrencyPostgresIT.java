@@ -143,7 +143,7 @@ class ExamQuestionSelectionConcurrencyPostgresIT {
 
     /** Thay đổi sau khi random nhưng trước lock phải bị phát hiện, không bốc bù câu khác hoặc lưu bộ thiếu. */
     @ParameterizedTest
-    @ValueSource(strings = {"status", "version", "rubric", "criterion"})
+    @ValueSource(strings = {"status", "version", "reference_answer", "time_limit"})
     void eligibilityChangesBetweenReadAndLockAbortSelection(String change) throws Exception {
         long parent = fixture.session(1), exam = fixture.exam(parent, 4, 1), question = fixture.question();
         var chosen = new CountDownLatch(1);
@@ -163,12 +163,11 @@ class ExamQuestionSelectionConcurrencyPostgresIT {
                 switch (change) {
                     case "status" -> jdbc.update("UPDATE aives.questions SET status='DRAFT' WHERE id=?", question);
                     case "version" -> jdbc.update("UPDATE aives.questions SET version=version+1 WHERE id=?", question);
-                    case "rubric" -> jdbc.update("UPDATE aives.rubric_criteria SET point_weight=2 WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE question_id=?)", question);
-                    case "criterion" -> jdbc.update("UPDATE aives.rubric_criteria SET criterion_text='Changed valid text' WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE question_id=?)", question);
+                    case "reference_answer" -> jdbc.update("UPDATE aives.questions SET reference_answer='Changed answer' WHERE id=?", question);
+                    case "time_limit" -> jdbc.update("UPDATE aives.questions SET answer_time_limit_seconds=90 WHERE id=?", question);
                 }
             } finally { release.countDown(); }
-            assertThat(pending.get(10, TimeUnit.SECONDS)).isEqualTo(change.equals("rubric")
-                    ? ErrorCode.EXAM_QUESTION_RUBRIC_INVALID : ErrorCode.EXAM_QUESTION_ELIGIBILITY_CHANGED);
+            assertThat(pending.get(10, TimeUnit.SECONDS)).isEqualTo(ErrorCode.EXAM_QUESTION_ELIGIBILITY_CHANGED);
         }
         assertCount(0);
     }
@@ -178,7 +177,7 @@ class ExamQuestionSelectionConcurrencyPostgresIT {
     @ValueSource(strings = {"question", "rubric", "criterion", "insert_criterion"})
     void selectedQuestionAndRubricGraphRemainStableUntilCommit(String target) throws Exception {
         long parent = fixture.session(1), exam = fixture.exam(parent, 4, 1), question = fixture.question();
-        long rubric = jdbc.queryForObject("SELECT id FROM aives.rubrics WHERE question_id=?", Long.class, question);
+        long rubric = jdbc.queryForObject("SELECT id FROM aives.rubrics WHERE subject_id=(SELECT subject_id FROM aives.questions WHERE id=?)", Long.class, question);
         var selected = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         try (var workers = Executors.newFixedThreadPool(1)) {

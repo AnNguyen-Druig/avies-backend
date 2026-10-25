@@ -60,6 +60,8 @@ class StudentAssignmentConcurrencyPostgresIT {
         jdbc = new JdbcTemplate(source);
         fixture = new ExamSessionFixture(jdbc);
         fixture.reset();
+        fixture.readyRubric(1);
+        fixture.readyQuestions();
         jdbc.update("INSERT INTO aives.users(role_id,username,email,full_name) VALUES (3,'student2','s2@test.invalid','S2'),(3,'student3','s3@test.invalid','S3')");
     }
 

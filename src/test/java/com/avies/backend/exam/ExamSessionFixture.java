@@ -37,6 +37,20 @@ final class ExamSessionFixture {
         jdbc.update("INSERT INTO aives.lecturer_subject_assignments(lecturer_id,subject_id) VALUES (1,1),(1,2),(2,1)");
     }
 
+    /** Chuẩn bị rubric hợp lệ cho test tạo phiên; không áp dụng cho fixture thử thiếu rubric/selection. */
+    void readyRubric(long subjectId) {
+        long rubric = jdbc.queryForObject("INSERT INTO aives.rubrics(subject_id,title) VALUES (?,'Rubric tạo phiên') RETURNING id", Long.class, subjectId);
+        jdbc.update("INSERT INTO aives.rubric_criteria(rubric_id,criterion_text,point_weight,display_order) VALUES (?,'Độ chính xác',4,1),(?,'Mức độ đầy đủ',6,2)", rubric, rubric);
+    }
+
+    /** Ngân hàng tối thiểu hợp lệ cho test tạo phiên; không tự gán câu vào bài thi sinh viên. */
+    void readyQuestions() {
+        for (int index = 1; index <= 3; index++) {
+            jdbc.update("INSERT INTO aives.questions(subject_id,created_by,content,bloom_level,status,source_type) "
+                    + "VALUES (1,1,?,'REMEMBER','APPROVED','MANUAL')", "Câu hỏi tạo phiên " + index);
+        }
+    }
+
     /** Request tạo đầy đủ, không giả định ID từ Supabase. */
     String creation() {
         return """

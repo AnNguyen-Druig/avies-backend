@@ -53,6 +53,7 @@ public class ExamFoundationPostgresConfig {
         try (Connection connection = source.getConnection()) {
             legacySchema(connection);
             execute(connection, projectSql("docs/migrations/20261016_feature2_exam_foundation.sql"));
+            currentExamSchema(connection);
         }
         return source;
     }
@@ -70,6 +71,13 @@ public class ExamFoundationPostgresConfig {
     /** Đọc nguyên script quản lý trong repository; không dùng bản SQL rút gọn thay migration. */
     static String projectSql(String relative) throws Exception {
         return Files.readString(Path.of(System.getProperty("test.project.root", ".")).resolve(relative), StandardCharsets.UTF_8);
+    }
+
+    /** Nâng fixture tới rubric cấp môn và snapshot bằng migration thật; chỉ chạy trong container mới. */
+    static void currentExamSchema(Connection connection) throws Exception {
+        execute(connection, projectSql("docs/migrations/20261022_rubric_subject_migration.sql"));
+        execute(connection, projectSql("docs/migrations/20261022_update_bloom_level_constraint.sql"));
+        execute(connection, projectSql("docs/migrations/20261025_feature2_exam_snapshots.sql"));
     }
 
     /** Gửi nguyên script để PostgreSQL xử lý đúng transaction và khối DO. */

@@ -10,6 +10,9 @@ import java.util.List;
 
 /** Truy cập câu đã gán vào bài thi; chỉ cung cấp dữ liệu cho bước chọn câu sau này. */
 public interface StudentExamQuestionRepository extends JpaRepository<StudentExamQuestion, Long> {
+    /** Phát hiện phiên legacy đã gán câu để không lấy rubric hiện tại giả làm lịch sử. */
+    boolean existsByStudentExamSessionId(Long sessionId);
+
     /** Khóa các liên kết đã có sau parent/child; không cho raw UPDATE/DELETE đổi bộ trong lúc retry. */
     @Query(value = "SELECT id FROM aives.student_exam_questions WHERE student_exam_id=:id ORDER BY id FOR UPDATE NOWAIT", nativeQuery = true)
     List<Long> lockPersistedSet(@Param("id") Long id);

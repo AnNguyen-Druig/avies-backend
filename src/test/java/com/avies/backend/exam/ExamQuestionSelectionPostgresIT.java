@@ -66,10 +66,6 @@ class ExamQuestionSelectionPostgresIT {
         jdbc.update("UPDATE aives.questions SET archived_at=now() WHERE id=?", archived);
         long nullBloom = fixture.question();
         jdbc.update("UPDATE aives.questions SET bloom_level=null WHERE id=?", nullBloom);
-        long missingRubric = fixture.question();
-        jdbc.update("DELETE FROM aives.rubrics WHERE question_id=?", missingRubric);
-        long invalidRubric = fixture.question();
-        jdbc.update("UPDATE aives.rubric_criteria SET point_weight=3 WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE question_id=?)", invalidRubric);
         var result = select(exam);
         assertThat(result).hasSize(2).extracting(SelectedMainQuestion::getQuestionId).containsExactlyInAnyOrder(a, b);
         assertThat(result).extracting(SelectedMainQuestion::getQuestionOrder).containsExactly(1, 2);
@@ -123,7 +119,12 @@ class ExamQuestionSelectionPostgresIT {
         fixture.link(exam, fixture.question(), 1);
         if (!issue.equals("partial")) fixture.link(exam, fixture.question(), issue.equals("gap") ? 3 : 2);
         if (issue.equals("extra")) fixture.link(exam, fixture.question(), 3);
-        if (issue.equals("config_changed")) jdbc.update("UPDATE aives.exam_sessions SET max_main_questions=3 WHERE id=?", parent);
+        if (issue.equals("config_changed")) {
+            assertThatThrownBy(() -> jdbc.update("UPDATE aives.exam_sessions SET max_main_questions=3 WHERE id=?", parent))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+            assertThat(select(exam)).hasSize(2);
+            return;
+        }
         var before = jdbc.queryForList("SELECT * FROM aives.student_exam_questions ORDER BY id");
         assertCode(() -> select(exam), ErrorCode.EXAM_QUESTION_SET_INCONSISTENT);
         assertThat(jdbc.queryForList("SELECT * FROM aives.student_exam_questions ORDER BY id")).isEqualTo(before);
@@ -147,11 +148,11 @@ class ExamQuestionSelectionPostgresIT {
         long exam = fixture.exam(parent, 4, 1);
         long question = fixture.question();
         switch (issue) {
-            case "missing" -> jdbc.update("DELETE FROM aives.rubrics WHERE question_id=?", question);
-            case "empty" -> jdbc.update("DELETE FROM aives.rubric_criteria WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE question_id=?)", question);
-            case "sum" -> jdbc.update("UPDATE aives.rubric_criteria SET point_weight=2 WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE question_id=?)", question);
-            case "zero" -> jdbc.update("UPDATE aives.rubric_criteria SET point_weight=0 WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE question_id=?) AND display_order=1", question);
-            case "blank" -> jdbc.update("UPDATE aives.rubric_criteria SET criterion_text=' ' WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE question_id=?)", question);
+            case "missing" -> jdbc.update("DELETE FROM aives.rubrics WHERE subject_id=(SELECT subject_id FROM aives.questions WHERE id=?)", question);
+            case "empty" -> jdbc.update("DELETE FROM aives.rubric_criteria WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE subject_id=(SELECT subject_id FROM aives.questions WHERE id=?))", question);
+            case "sum" -> jdbc.update("UPDATE aives.rubric_criteria SET point_weight=2 WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE subject_id=(SELECT subject_id FROM aives.questions WHERE id=?))", question);
+            case "zero" -> jdbc.update("UPDATE aives.rubric_criteria SET point_weight=0 WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE subject_id=(SELECT subject_id FROM aives.questions WHERE id=?)) AND display_order=1", question);
+            case "blank" -> jdbc.update("UPDATE aives.rubric_criteria SET criterion_text=' ' WHERE rubric_id=(SELECT id FROM aives.rubrics WHERE subject_id=(SELECT subject_id FROM aives.questions WHERE id=?))", question);
         }
         assertCode(() -> select(exam), ErrorCode.EXAM_QUESTION_RUBRIC_INVALID);
         assertCount(0);
@@ -256,7 +257,7 @@ class ExamQuestionSelectionPostgresIT {
         assertThat(jdbc.queryForObject("SELECT status FROM aives.exam_sessions WHERE id=?", String.class, parent)).isEqualTo("UPCOMING");
     }
 
-    /** FK bảo vệ câu tham chiếu khỏi xóa; không tạo snapshot table để thay thế quy tắc hiện hành. */
+    /** FK vẫn bảo vệ câu nguồn khỏi xóa; snapshot không làm mất quy tắc tham chiếu hiện hành. */
     @Test
     void selectedQuestionCannotBeDeletedByDatabaseCascade() {
         long parent = fixture.session(1), exam = fixture.exam(parent, 4, 1), question = fixture.question();

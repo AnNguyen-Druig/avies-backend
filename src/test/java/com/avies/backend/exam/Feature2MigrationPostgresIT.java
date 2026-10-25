@@ -60,13 +60,13 @@ class Feature2MigrationPostgresIT {
         });
     }
 
-    /** SQL khởi tạo mới và schema được nâng cấp cùng đạt toàn bộ invariant của Feature 2. */
+    /** SQL baseline hiện hành đạt invariant; chạy lại migration lifecycle mới, không sửa/chạy ngược migration lịch sử. */
     @Test
     void freshInitializationMatchesVerification() throws Exception {
         inDatabase(connection -> {
             execute(connection, projectSql("docs/database/AIVES_DB_POSTGRESQL_FINAL.sql"));
             assertVerificationPassesReadOnly(connection);
-            execute(connection, projectSql("docs/migrations/20261016_feature2_exam_foundation.sql"));
+            execute(connection, projectSql("docs/migrations/20261025_feature2_exam_lifecycle.sql"));
             assertVerificationPassesReadOnly(connection);
         });
     }
@@ -126,6 +126,18 @@ class Feature2MigrationPostgresIT {
             execute(connection, "ALTER TABLE aives.student_exam_questions DROP CONSTRAINT student_exam_questions_question_id_fkey; ALTER TABLE aives.student_exam_questions ADD CONSTRAINT student_exam_questions_question_id_fkey FOREIGN KEY (question_id) REFERENCES aives.questions(id) ON UPDATE CASCADE ON DELETE CASCADE");
             assertThat(verificationFailures(connection)).contains("validated CHECK definition: ck_exam_session_schedule",
                     "PK/FK/UNIQUE: student_exam_questions_question_id_fkey");
+        });
+    }
+
+    /** Verifier chỉ nhận hai bộ trạng thái đã phê duyệt, không bỏ qua CHECK hoặc nhận trạng thái lạ. */
+    @ParameterizedTest
+    @ValueSource(strings = {"CHECK (true)", "CHECK (status IN ('ASSIGNED','IN_PROGRESS','COMPLETED','UNKNOWN'))"})
+    void verificationRejectsUnexpectedLifecycleStatusDefinitions(String definition) throws Exception {
+        inDatabase(connection -> {
+            execute(connection, projectSql("docs/database/AIVES_DB_POSTGRESQL_FINAL.sql"));
+            execute(connection, "ALTER TABLE aives.student_exams DROP CONSTRAINT student_exams_status_check; "
+                    + "ALTER TABLE aives.student_exams ADD CONSTRAINT student_exams_status_check " + definition);
+            assertThat(verificationFailures(connection)).contains("validated CHECK definition: student_exams_status_check");
         });
     }
 

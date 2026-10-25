@@ -203,6 +203,19 @@ class ExamSessionControllerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("password"))));
     }
 
+    /** Handler chỉ dựng thông báo thiếu câu từ số cấu hình, không trả thông điệp exception tùy ý. */
+    @Test
+    void missingQuestionPoolHasDynamicVietnamese400WithoutLeakingExceptionText() throws Exception {
+        var failure = new com.avies.backend.exception.ExamSessionQuestionPoolException(7) {
+            @Override public String getMessage() { return "Internal SQL must stay private"; }
+        };
+        when(service.create(any())).thenThrow(failure);
+        mvc.perform(post("/exam-sessions").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_LECTURER")))
+                        .contentType(MediaType.APPLICATION_JSON).content(validCreate()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1306))
+                .andExpect(jsonPath("$.message").value("Bạn phải tạo đủ 7 số câu hỏi chính đã được APPROVED"));
+    }
+
     /** Bộ dữ liệu JSON sai bao phủ trường bắt buộc, số lẻ/overflow, timezone và mass assignment. */
     static Stream<String> invalidCreates() throws Exception {
         ObjectMapper mapper = new ObjectMapper();

@@ -21,6 +21,7 @@ public interface QuestionRepository extends JpaRepository<Question, Long>, JpaSp
             SELECT q.id AS "questionId", q.subject_id AS "subjectId", q.version AS "questionVersion",
                    q.status AS "questionStatus", q.bloom_level AS "bloomLevel",
                    (q.archived_at IS NOT NULL) AS "archived", q.content AS "content",
+                   q.reference_answer AS "referenceAnswer", q.answer_time_limit_seconds AS "answerTimeLimitSeconds",
                    r.id AS "rubricId", c.id AS "criterionId", c.criterion_text AS "criterionText",
                    c.point_weight AS "pointWeight", c.is_mandatory AS "mandatory", c.display_order AS "displayOrder"
             FROM aives.questions q LEFT JOIN aives.rubrics r ON r.subject_id=q.subject_id

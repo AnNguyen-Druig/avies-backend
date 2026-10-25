@@ -11,6 +11,8 @@ import com.avies.backend.exception.exceptions.AssignmentExceptionHandler;
 import com.avies.backend.repository.ExamSessionRepository;
 import com.avies.backend.service.impl.ExamSessionServiceImpl;
 import com.avies.backend.service.support.ExamAccessPolicy;
+import com.avies.backend.service.support.ExamSnapshotSupport;
+import com.avies.backend.service.support.ExamQuestionEligibility;
 import com.avies.backend.service.impl.LecturerSubjectAssignmentServiceImpl;
 import jakarta.persistence.EntityManagerFactory;
 import org.springframework.context.annotation.*;
@@ -35,7 +37,7 @@ import java.util.Map;
 @EnableJpaRepositories(basePackageClasses = ExamSessionRepository.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX,
                 pattern = ".*(LearningMaterial|InvalidatedToken|RefreshToken).*"))
-@Import({ExamSessionController.class, ExamSessionServiceImpl.class, ExamSessionExceptionHandler.class, ExamAccessPolicy.class,
+@Import({ExamSessionController.class, ExamSessionServiceImpl.class, ExamSessionExceptionHandler.class, ExamAccessPolicy.class, ExamSnapshotSupport.class, ExamQuestionEligibility.class,
         LecturerSubjectAssignmentController.class, LecturerSubjectAssignmentServiceImpl.class,
         AssignmentExceptionHandler.class, SecurityConfig.class, CorsProperties.class})
 public class ExamSessionCrudPostgresConfig {
@@ -53,6 +55,7 @@ public class ExamSessionCrudPostgresConfig {
             ExamFoundationPostgresConfig.legacySchema(connection);
             ExamFoundationPostgresConfig.execute(connection, ExamFoundationPostgresConfig.projectSql(
                     "docs/migrations/20261016_feature2_exam_foundation.sql"));
+            ExamFoundationPostgresConfig.currentExamSchema(connection);
         }
         return source;
     }

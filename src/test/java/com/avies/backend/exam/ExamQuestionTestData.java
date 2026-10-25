@@ -24,6 +24,8 @@ final class ExamQuestionTestData {
         /** Bloom dạng raw. */ private String bloomLevel;
         /** Cờ lưu trữ. */ private Boolean archived;
         /** Nội dung. */ private String content;
+        /** Đáp án nguồn. */ private String referenceAnswer;
+        /** Giới hạn trả lời nguồn. */ private Integer answerTimeLimitSeconds;
         /** Rubric. */ private Long rubricId;
         /** Tiêu chí. */ private Long criterionId;
         /** Mô tả. */ private String criterionText;
@@ -35,8 +37,8 @@ final class ExamQuestionTestData {
     /** Một câu APPROVED đầy đủ có rubric một tiêu chí tổng 10. */
     static Row row(long id, BloomLevel bloom) {
         return Row.builder().questionId(id).subjectId(1L).questionVersion(0L).questionStatus("APPROVED")
-                .bloomLevel(bloom.name()).archived(false).content("Câu hỏi " + id).rubricId(id + 100)
-                .criterionId(id + 1000).criterionText("Tiêu chí " + id).pointWeight(new BigDecimal("10.00"))
+                .bloomLevel(bloom.name()).archived(false).content("Câu hỏi " + id).rubricId(101L)
+                .criterionId(1001L).criterionText("Tiêu chí chung").pointWeight(new BigDecimal("10.00"))
                 .mandatory(false).displayOrder(1).build();
     }
 
