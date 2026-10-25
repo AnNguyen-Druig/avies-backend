@@ -65,7 +65,7 @@ openai:
 # Gemini Configuration (tùy chọn hoặc dự phòng)
 gemini:
   api-key: ${GEMINI_API_KEY}
-  model: ${GEMINI_MODEL:gemini-3.8-flash}
+  model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
 
 # Storage Configuration
 storage:

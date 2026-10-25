@@ -38,19 +38,23 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
     @Value("${gemini.api-key:}")
     String geminiApiKey;
 
-    @Value("${gemini.model:gemini-3.8-flash}")
+    @Value("${gemini.model:gemini-3.5-flash-lite}")
     String geminiModel;
 
     final RestClient restClient;
     final ObjectMapper objectMapper;
 
     public QuestionGenerationServiceImpl() {
-        this.restClient = RestClient.builder().build();
-        this.objectMapper = new ObjectMapper();
+        this(new ObjectMapper());
     }
 
     public QuestionGenerationServiceImpl(ObjectMapper objectMapper) {
-        this.restClient = RestClient.builder().build();
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
+                new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(java.time.Duration.ofSeconds(10));
+        factory.setReadTimeout(java.time.Duration.ofSeconds(60));
+
+        this.restClient = RestClient.builder().requestFactory(factory).build();
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
     }
 
@@ -236,9 +240,13 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             JsonNode candidates = root.path("candidates");
             if (candidates.isArray() && !candidates.isEmpty()) {
                 JsonNode parts = candidates.get(0).path("content").path("parts");
-                if (parts.isArray() && !parts.isEmpty()) {
-                    String contentJson = parts.get(0).path("text").asText();
-                    return parseQuestionsJson(contentJson, requestedBloom, targetCount);
+                if (parts.isArray()) {
+                    for (JsonNode part : parts) {
+                        String text = part.path("text").asText("");
+                        if (!text.isBlank()) {
+                            return parseQuestionsJson(text, requestedBloom, targetCount);
+                        }
+                    }
                 }
             }
             throw new AppException(ErrorCode.AI_GENERATION_FAILED);
@@ -252,7 +260,18 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
     private List<GeneratedQuestionDto> parseQuestionsJson(String contentJson, BloomLevel requestedBloom, int targetCount) {
         try {
-            JsonNode root = objectMapper.readTree(contentJson);
+            String sanitizedJson = contentJson.trim();
+            if (sanitizedJson.startsWith("```json")) {
+                sanitizedJson = sanitizedJson.substring(7);
+            } else if (sanitizedJson.startsWith("```")) {
+                sanitizedJson = sanitizedJson.substring(3);
+            }
+            if (sanitizedJson.endsWith("```")) {
+                sanitizedJson = sanitizedJson.substring(0, sanitizedJson.length() - 3);
+            }
+            sanitizedJson = sanitizedJson.trim();
+
+            JsonNode root = objectMapper.readTree(sanitizedJson);
             JsonNode questionsNode = root.has("questions") ? root.get("questions") : root;
 
             List<GeneratedQuestionDto> questions = new ArrayList<>();

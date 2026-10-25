@@ -36,7 +36,11 @@ public class EmbeddingServiceImpl implements EmbeddingService {
     private final RestClient restClient;
 
     public EmbeddingServiceImpl() {
-        this.restClient = RestClient.builder().build();
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
+                new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(java.time.Duration.ofSeconds(10));
+        factory.setReadTimeout(java.time.Duration.ofSeconds(15));
+        this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
     /**
