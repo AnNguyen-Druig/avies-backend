@@ -1,6 +1,7 @@
 package com.avies.backend.service.impl;
 
 import com.avies.backend.dto.response.SelectedMainQuestion;
+import com.avies.backend.dto.snapshot.ExamRubricSnapshot;
 import com.avies.backend.entity.*;
 import com.avies.backend.entity.enums.*;
 import com.avies.backend.exception.*;
@@ -24,6 +25,8 @@ import org.springframework.validation.annotation.Validated;
 
 import java.util.*;
 import java.util.stream.IntStream;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 /**
  * Service nội bộ nguyên tử; không mở REST, không chuyển trạng thái và không gửi nội dung chấm thi.
@@ -37,10 +40,11 @@ public class ExamQuestionSelectionServiceImpl implements ExamQuestionSelectionSe
     private final StudentExamRepository studentExams;
     private final StudentExamQuestionRepository selections;
     private final QuestionRepository questions;
-    private final RubricRepository rubrics;
     private final ExamAccessPolicy access;
     private final ExamQuestionEligibility eligibility;
     private final ExamQuestionSelector selector;
+    /** Chốt thang chấm một lần cho phiên và kiểm tra snapshot cũ mà không dùng lại ngân hàng. */
+    private final ExamSnapshotSupport snapshots;
 
     /**
      * Refresh child và link dưới khóa, không clear persistence context của caller.
@@ -89,17 +93,32 @@ public class ExamQuestionSelectionServiceImpl implements ExamQuestionSelectionSe
         existing.forEach(entityManager::refresh);
         if (!existing.isEmpty()) {
             requireComplete(existing, count);
+            snapshots.readRubric(parent);
+            existing.forEach(snapshots::readQuestion);
             return existing.stream().map(this::response).toList();
         }
         requireReadyForNewSet(parent, exam);
-        var initial = eligibility.inspect(questions.findSelectionPool(parent.getSubject().getId()), parent.getSubject().getId());
+        if (parent.getRubricSnapshot() == null && parent.getRubricSnapshotAt() == null
+                && (selections.existsByStudentExamSessionId(parentId)
+                || studentExams.hasStartedExam(parentId, StudentExamStatus.ASSIGNED)))
+            throw new AppException(ErrorCode.EXAM_SNAPSHOT_UNAVAILABLE);
+        ExamRubricSnapshot rubric = snapshots.captureRubric(parent);
+        var initial = eligibility.inspect(questions.findSelectionPool(parent.getSubject().getId()), parent.getSubject().getId(), rubric);
         if (initial.candidates().size() < count) {
             throw new AppException(initial.basicCount() >= count ? ErrorCode.EXAM_QUESTION_RUBRIC_INVALID : ErrorCode.EXAM_QUESTION_POOL_INSUFFICIENT);
         }
         var history = selections.findSelectionHistory(parentId, studentExamId).stream().map(row -> new ExamQuestionSelector.Use(row.getStudentExam().getId(), row.getQuestion().getId(), row.getStudentExam().getStartedAt(), row.getStudentExam().getCompletedAt(), row.getId())).toList();
         var chosen = selector.choose(new ArrayList<>(initial.candidates().values()), history, count);
-        lockAndRevalidate(chosen, parent.getSubject().getId());
-        List<StudentExamQuestion> created = IntStream.range(0, count).mapToObj(index -> StudentExamQuestion.builder().studentExam(exam).question(entityManager.getReference(Question.class, chosen.get(index).id())).questionOrder(index + 1).build()).toList();
+        lockAndRevalidate(chosen, parent.getSubject().getId(), rubric);
+        OffsetDateTime capturedAt = OffsetDateTime.now(ZoneOffset.UTC);
+        List<StudentExamQuestion> created = IntStream.range(0, count).mapToObj(index -> {
+            var candidate = chosen.get(index);
+            return StudentExamQuestion.builder().studentExam(exam)
+                    .question(entityManager.getReference(Question.class, candidate.id())).questionOrder(index + 1)
+                    .snapshotContent(candidate.content()).snapshotReferenceAnswer(candidate.referenceAnswer())
+                    .snapshotBloomLevel(candidate.bloom().name()).snapshotAnswerTimeLimitSeconds(candidate.answerTimeLimitSeconds())
+                    .snapshotQuestionVersion(candidate.version()).snapshotCapturedAt(capturedAt).build();
+        }).toList();
         selections.saveAllAndFlush(created);
         return created.stream().map(this::response).toList();
     }
@@ -107,14 +126,11 @@ public class ExamQuestionSelectionServiceImpl implements ExamQuestionSelectionSe
     /**
      * Mọi thay đổi nội dung hoặc rubric giữa hai lần đọc đều khiến caller rollback, không chọn bù âm thầm.
      */
-    private void lockAndRevalidate(List<ExamQuestionEligibility.Candidate> chosen, Long subjectId) {
+    private void lockAndRevalidate(List<ExamQuestionEligibility.Candidate> chosen, Long subjectId, ExamRubricSnapshot rubric) {
         List<Long> ids = chosen.stream().map(ExamQuestionEligibility.Candidate::id).sorted().toList();
         if (questions.lockForSelection(ids).size() != ids.size())
             throw new AppException(ErrorCode.EXAM_QUESTION_ELIGIBILITY_CHANGED);
-        List<Long> rubricIds = rubrics.lockForQuestionSelection(ids);
-        if (rubricIds.size() != ids.size()) throw new AppException(ErrorCode.EXAM_QUESTION_RUBRIC_INVALID);
-        rubrics.lockCriteriaForSelection(rubricIds);
-        var current = eligibility.inspect(questions.readSelectionRows(ids), subjectId);
+        var current = eligibility.inspect(questions.readSelectionRows(ids), subjectId, rubric);
         if (current.candidates().size() != ids.size()) {
             throw new AppException(current.basicCount() == ids.size() ? ErrorCode.EXAM_QUESTION_RUBRIC_INVALID : ErrorCode.EXAM_QUESTION_ELIGIBILITY_CHANGED);
         }

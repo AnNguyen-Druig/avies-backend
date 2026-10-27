@@ -1,4 +1,4 @@
-<mxfile host="Electron" pages="5">
+<mxfile host="Electron" pages="6">
   <diagram name="Class-Diagram" id="LeyaF5HfvpyAg0YpelC6">
     <mxGraphModel dx="5280" dy="2103" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
@@ -3206,6 +3206,22 @@
         <mxCell id="f2-note" parent="f2-layer" value="6 FK giữ ON UPDATE CASCADE. Hành vi ON DELETE ghi trên cạnh. Java: LAZY, đơn hướng, không cascade remove. Dữ liệu legacy giữ NULL; P0.3 chưa có API/xếp lịch/chọn câu/snapshot. Chi tiết: docs/business_rules/feature2-exam-foundation.md" style="text;html=1;whiteSpace=wrap;align=left;" vertex="1">
           <mxGeometry x="540" y="590" width="850" height="80" as="geometry" />
         </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="Feature 2 - Immutable exam snapshots" id="f2-snapshots-20261025">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" page="1" pageWidth="1200" pageHeight="900">
+      <root>
+        <mxCell id="snap-root" />
+        <mxCell id="snap-layer" parent="snap-root" />
+        <mxCell id="snap-subject" parent="snap-layer" value="SUBJECTS (1) — (0..1) RUBRICS&#xa;rubrics.subject_id UNIQUE&#xa;Rubric hiện hành có thể sửa/xóa&#xa;RUBRICS (1) — (N) RUBRIC_CRITERIA" style="rounded=1;whiteSpace=wrap;html=0;" vertex="1"><mxGeometry x="40" y="40" width="420" height="130" as="geometry" /></mxCell>
+        <mxCell id="snap-session" parent="snap-layer" value="EXAM_SESSIONS&#xa;rubric_snapshot: TEXT (JSON schemaVersion=1)&#xa;rubric_snapshot_at: TIMESTAMPTZ&#xa;Payload chứa ID nguồn, tiêu đề, mô tả, tiêu chí và điểm&#xa;Chốt một lần khi phiên chọn câu đầu tiên" style="rounded=1;whiteSpace=wrap;html=0;" vertex="1"><mxGeometry x="40" y="260" width="420" height="170" as="geometry" /></mxCell>
+        <mxCell id="snap-question" parent="snap-layer" value="QUESTIONS&#xa;content, reference_answer, bloom_level&#xa;answer_time_limit_seconds, version&#xa;Nguồn truy xuất; không dùng để dựng lại bài thi cũ" style="rounded=1;whiteSpace=wrap;html=0;" vertex="1"><mxGeometry x="670" y="40" width="440" height="130" as="geometry" /></mxCell>
+        <mxCell id="snap-link" parent="snap-layer" value="STUDENT_EXAM_QUESTIONS&#xa;student_exam_id, question_id (RESTRICT), question_order&#xa;snapshot_content, snapshot_reference_answer&#xa;snapshot_bloom_level, snapshot_answer_time_limit_seconds&#xa;snapshot_question_version, snapshot_captured_at&#xa;Chốt khi gán câu, không ghi đè khi retry" style="rounded=1;whiteSpace=wrap;html=0;" vertex="1"><mxGeometry x="670" y="260" width="440" height="200" as="geometry" /></mxCell>
+        <mxCell id="snap-rubric-edge" parent="snap-layer" value="Sao chép giá trị, không phải FK rubric" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;" edge="1" source="snap-subject" target="snap-session"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="snap-question-edge" parent="snap-layer" value="Sao chép dưới khóa câu nguồn" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;" edge="1" source="snap-question" target="snap-link"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="snap-owner-edge" parent="snap-layer" value="Qua STUDENT_EXAMS.session_id; cùng rubric cho mọi lượt thi" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;" edge="1" source="snap-session" target="snap-link"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="snap-note" parent="snap-layer" value="Transaction chọn câu lưu rubric và toàn bộ câu nguyên tử. Trigger ngăn UPDATE snapshot đã chốt. NULL dành cho legacy, không tự backfill. ExamSnapshotService đọc snapshot cho Feature 3/4, không đọc nguồn hiện hành; caller phải kiểm tra quyền. Chưa có API Start/public snapshot. Đã tạo migration trong repository, KHÔNG xác nhận triển khai database dùng chung." style="text;whiteSpace=wrap;html=0;align=left;" vertex="1"><mxGeometry x="40" y="530" width="1070" height="140" as="geometry" /></mxCell>
       </root>
     </mxGraphModel>
   </diagram>

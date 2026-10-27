@@ -40,7 +40,7 @@ public class ExamSessionController {
      */
     @PostMapping
     @PreAuthorize("hasAuthority('ROLE_LECTURER')")
-    @Operation(summary = "Giảng viên tạo phiên thi", description = "Cần phân công môn hiện hành và lịch tương lai có offset. Không nhận lecturerId/status; chưa cần sinh viên hoặc câu hỏi.")
+    @Operation(summary = "Giảng viên tạo phiên thi", description = "Cần phân công môn hiện hành, lịch tương lai, rubric môn đầy đủ/hợp lệ và ít nhất maxMainQuestions câu APPROVED đủ điều kiện Start trong môn. Thiếu rubric trả 400/1305, thiếu câu trả 400/1306 kèm số tối thiểu. Chưa chọn đề/chốt snapshot lúc tạo và chưa cần sinh viên. Không nhận lecturerId/status.")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Tạo phiên UPCOMING thành công; Location trỏ tới API chi tiết")
     public ResponseEntity<ApiResponse<ExamSessionResponse>> create(
             @Valid @RequestBody ExamSessionCreationRequest request) {
@@ -79,7 +79,7 @@ public class ExamSessionController {
      */
     @PatchMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_LECTURER')")
-    @Operation(summary = "Chủ sở hữu cập nhật phiên UPCOMING", description = "Phải còn phân công môn và chưa có StudentExam bắt đầu. Gộp PATCH rồi kiểm tra lịch tương lai; không đổi môn/chủ sở hữu/trạng thái.")
+    @Operation(summary = "Chủ sở hữu cập nhật phiên UPCOMING", description = "Phải còn phân công môn và chưa có StudentExam bắt đầu. Gộp PATCH rồi kiểm tra lịch tương lai; nếu đổi maxMainQuestions thì kiểm tra lại rubric và ngân hàng như New Exam (400/1305 hoặc 1306 khi thiếu). Không đổi môn/chủ sở hữu/trạng thái.")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Phiên sau cập nhật, kể cả yêu cầu giữ nguyên giá trị")
     public ApiResponse<ExamSessionResponse> update(
             @PathVariable @Positive Long id, @Valid @RequestBody ExamSessionUpdateRequest request) {

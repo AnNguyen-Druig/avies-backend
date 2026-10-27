@@ -66,6 +66,8 @@ class ExamSessionConcurrencyPostgresIT {
         jdbc = new JdbcTemplate(source);
         fixture = new ExamSessionFixture(jdbc);
         fixture.reset();
+        fixture.readyRubric(1);
+        fixture.readyQuestions();
     }
 
     /** Không giữ principal ở thread thực thi JUnit. */
@@ -106,6 +108,8 @@ class ExamSessionConcurrencyPostgresIT {
             first.get(10, TimeUnit.SECONDS);
         }
         assertThat(jdbc.queryForObject("SELECT title FROM aives.exam_sessions WHERE id=?", String.class, id)).isEqualTo("Thay đổi thứ nhất");
+        // Request thử lại đổi Main thành 5 phải có đủ ngân hàng theo điều kiện Edit hiện hành.
+        fixture.readyQuestions();
         mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON).content("{\"maxMainQuestions\":5}"), "owner"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.result.title").value("Thay đổi thứ nhất"));
     }

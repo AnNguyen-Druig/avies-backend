@@ -59,6 +59,8 @@ class ExamSessionCrudPostgresIT {
         jdbc = new JdbcTemplate(source);
         fixture = new ExamSessionFixture(jdbc);
         fixture.reset();
+        fixture.readyRubric(1);
+        fixture.readyQuestions();
     }
 
     /** Không để principal của lời gọi service trực tiếp rò sang test khác. */
@@ -67,9 +69,9 @@ class ExamSessionCrudPostgresIT {
         SecurityContextHolder.clearContext();
     }
 
-    /** Tạo đúng UPCOMING/owner, trim tiêu đề, không tự gán sinh viên hay lấy câu ngân hàng. */
+    /** Đủ ngân hàng nhưng chỉ tạo UPCOMING/owner, trim tiêu đề; chưa gán sinh viên hoặc chọn đề. */
     @Test
-    void createsUpcomingWithoutQuestionsOrStudentsAndRunsCrud() throws Exception {
+    void createsUpcomingWithoutSelectingQuestionsOrAssigningStudentsAndRunsCrud() throws Exception {
         long id = fixture.create(mvc);
         assertThat(jdbc.queryForObject("SELECT lecturer_id FROM aives.exam_sessions WHERE id=?", Long.class, id)).isEqualTo(1L);
         assertThat(jdbc.queryForObject("SELECT status FROM aives.exam_sessions WHERE id=?", String.class, id)).isEqualTo("UPCOMING");
@@ -93,6 +95,122 @@ class ExamSessionCrudPostgresIT {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions WHERE id=?", Integer.class, id)).isZero();
         mvc.perform(as(delete("/exam-sessions/" + id), "owner")).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(1300));
+    }
+
+    /** Câu đúng trạng thái nhưng thiếu Bloom/nội dung cũng không được đếm khác với Start. */
+    @ParameterizedTest
+    @ValueSource(strings = {"empty", "insufficient", "draft", "pending", "rejected", "archived", "otherSubject", "noBloom", "blankContent", "longContent"})
+    void creationRequiresEnoughStartEligibleApprovedQuestions(String variant) throws Exception {
+        switch (variant) {
+            case "empty" -> jdbc.update("DELETE FROM aives.questions");
+            case "insufficient" -> jdbc.update("DELETE FROM aives.questions WHERE id=1");
+            case "draft" -> jdbc.update("UPDATE aives.questions SET status='DRAFT' WHERE id=1");
+            case "pending" -> jdbc.update("UPDATE aives.questions SET status='PENDING_REVIEW' WHERE id=1");
+            case "rejected" -> jdbc.update("UPDATE aives.questions SET status='REJECTED' WHERE id=1");
+            case "archived" -> jdbc.update("UPDATE aives.questions SET archived_at=now() WHERE id=1");
+            case "otherSubject" -> jdbc.update("UPDATE aives.questions SET subject_id=2 WHERE id=1");
+            case "noBloom" -> jdbc.update("UPDATE aives.questions SET bloom_level=NULL WHERE id=1");
+            case "blankContent" -> jdbc.update("UPDATE aives.questions SET content='  ' WHERE id=1");
+            default -> jdbc.update("UPDATE aives.questions SET content=repeat('x',10001) WHERE id=1");
+        }
+        var before = jdbc.queryForList("SELECT * FROM aives.questions ORDER BY id");
+        mvc.perform(as(post("/exam-sessions").contentType(MediaType.APPLICATION_JSON).content(fixture.creation()), "owner"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1306))
+                .andExpect(jsonPath("$.message").value("Bạn phải tạo đủ 3 số câu hỏi chính đã được APPROVED"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.student_exam_questions", Integer.class)).isZero();
+        assertThat(jdbc.queryForList("SELECT * FROM aives.questions ORDER BY id")).isEqualTo(before);
+    }
+
+    /** Số cần thiết lấy từ Main của request, không dùng hằng số 3 hoặc cộng câu đào sâu. */
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 4, 2147483647})
+    void shortageMessageUsesRequestedMainCount(int required) throws Exception {
+        jdbc.update("DELETE FROM aives.questions");
+        String body = fixture.creation().replace("\"maxMainQuestions\":3", "\"maxMainQuestions\":" + required);
+        mvc.perform(as(post("/exam-sessions").contentType(MediaType.APPLICATION_JSON).content(body), "owner"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1306))
+                .andExpect(jsonPath("$.message").value("Bạn phải tạo đủ " + required + " số câu hỏi chính đã được APPROVED"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions", Integer.class)).isZero();
+    }
+
+    /** Đúng ngưỡng vẫn tạo được, không nhân câu với Follow-ups và không chốt đề trước khi Start. */
+    @Test
+    void exactlyEnoughMainQuestionsAllowCreationRegardlessOfFollowUps() throws Exception {
+        String body = fixture.creation().replace("\"maxFollowUps\":0", "\"maxFollowUps\":20");
+        mvc.perform(as(post("/exam-sessions").contentType(MediaType.APPLICATION_JSON).content(body), "owner"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.result.maxMainQuestions").value(3));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions WHERE rubric_snapshot IS NOT NULL OR rubric_snapshot_at IS NOT NULL", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.student_exam_questions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.questions", Integer.class)).isEqualTo(3);
+    }
+
+    /** Nếu đủ câu ở lần đọc nhưng một câu đang bị chỉnh sửa, không lưu phiên trên dữ liệu chưa ổn định. */
+    @Test
+    void creationConflictsWithConcurrentQuestionModificationAndCanBeRetried() throws Exception {
+        try (var blocker = source.getConnection()) {
+            blocker.setAutoCommit(false);
+            try (var statement = blocker.createStatement()) {
+                statement.execute("SELECT id FROM aives.questions WHERE id=1 FOR UPDATE");
+            }
+            mvc.perform(as(post("/exam-sessions").contentType(MediaType.APPLICATION_JSON).content(fixture.creation()), "owner"))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(1303));
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions", Integer.class)).isZero();
+            blocker.rollback();
+        }
+        fixture.create(mvc);
+    }
+
+    /** Chặn tạo ngay khi rubric thiếu/sai, không để phiên mới hoặc snapshot mồ côi được lưu. */
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "empty", "wrongTotal", "zeroWeight", "duplicateOrder", "blankText", "otherSubject"})
+    void creationRequiresCompleteSubjectRubric(String variant) throws Exception {
+        String sql = switch (variant) {
+            case "missing", "otherSubject" -> "DELETE FROM aives.rubrics WHERE subject_id=1";
+            case "empty" -> "DELETE FROM aives.rubric_criteria";
+            case "wrongTotal" -> "UPDATE aives.rubric_criteria SET point_weight=1";
+            case "zeroWeight" -> "UPDATE aives.rubric_criteria SET point_weight=0 WHERE display_order=1";
+            case "duplicateOrder" -> "UPDATE aives.rubric_criteria SET display_order=1";
+            default -> "UPDATE aives.rubric_criteria SET criterion_text='  '";
+        };
+        jdbc.update(sql);
+        if (variant.equals("otherSubject")) fixture.readyRubric(2);
+        var before = jdbc.queryForList("SELECT * FROM aives.rubric_criteria ORDER BY id");
+        mvc.perform(as(post("/exam-sessions").contentType(MediaType.APPLICATION_JSON).content(fixture.creation()), "owner"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1305))
+                .andExpect(jsonPath("$.message").value("Bạn phải tạo đầy đủ Rubrics cho môn"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.student_exam_questions", Integer.class)).isZero();
+        assertThat(jdbc.queryForList("SELECT * FROM aives.rubric_criteria ORDER BY id")).isEqualTo(before);
+    }
+
+    /** Có rubric hợp lệ vẫn chưa chốt snapshot; nguồn có thể cập nhật hợp lệ trước lần Start đầu tiên. */
+    @Test
+    void creationChecksRubricWithoutFreezingItsSnapshot() throws Exception {
+        long id = fixture.create(mvc);
+        assertThat(jdbc.queryForObject("SELECT rubric_snapshot IS NULL AND rubric_snapshot_at IS NULL FROM aives.exam_sessions WHERE id=?", Boolean.class, id)).isTrue();
+        jdbc.update("UPDATE aives.rubric_criteria SET point_weight=5,criterion_text='Tiêu chí đã cập nhật'");
+        fixture.create(mvc);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions WHERE rubric_snapshot IS NOT NULL OR rubric_snapshot_at IS NOT NULL", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.student_exam_questions", Integer.class)).isZero();
+    }
+
+    /** Rubric/tiêu chí đang thay đổi phải trả xung đột, không lưu phiên trên dữ liệu chưa được xác minh. */
+    @ParameterizedTest
+    @ValueSource(strings = {"rubric", "criteria"})
+    void creationCannotRaceWithRubricUpdates(String target) throws Exception {
+        try (var blocker = source.getConnection()) {
+            blocker.setAutoCommit(false);
+            try (var statement = blocker.createStatement()) {
+                statement.execute(target.equals("rubric") ? "SELECT id FROM aives.rubrics WHERE subject_id=1 FOR UPDATE"
+                        : "SELECT id FROM aives.rubric_criteria FOR UPDATE");
+            }
+            mvc.perform(as(post("/exam-sessions").contentType(MediaType.APPLICATION_JSON).content(fixture.creation()), "owner"))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(1303));
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions", Integer.class)).isZero();
+            blocker.rollback();
+        }
+        fixture.create(mvc);
     }
 
     /** Phân công cần tồn tại ở thời điểm ghi; môn không tồn tại trả 404, không ghi một phần. */
@@ -198,6 +316,196 @@ class ExamSessionCrudPostgresIT {
         mvc.perform(as(post("/exam-sessions").contentType(MediaType.APPLICATION_JSON).content(changed), "owner"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1304));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions", Integer.class)).isZero();
+    }
+
+    /** Từ chối ngay khi tạo nếu phiên thiếu thời gian cho một slot, kể cả chỉ thiếu một phần giây. */
+    @ParameterizedTest
+    @ValueSource(strings = {"reported", "shortBySecond", "shortByMicrosecond", "offset", "maximumSlot"})
+    void rejectsCreateWhenOneStudentCannotFit(String variant) throws Exception {
+        var end = fixture.start.plusMinutes(20).minusSeconds(1);
+        int slotMinutes = 20;
+        if (variant.equals("reported")) {
+            end = fixture.start.plusMinutes(121);
+            slotMinutes = 200;
+        }
+        if (variant.equals("shortByMicrosecond")) end = fixture.start.plusMinutes(20).minusNanos(1000);
+        if (variant.equals("offset")) end = end.withOffsetSameInstant(java.time.ZoneOffset.UTC);
+        if (variant.equals("maximumSlot")) slotMinutes = Integer.MAX_VALUE;
+        String body = fixture.creation().replace(fixture.start.plusHours(2).toString(), end.toString())
+                .replace("\"slotDurationMinutes\":20", "\"slotDurationMinutes\":" + slotMinutes);
+        mvc.perform(as(post("/exam-sessions").contentType(MediaType.APPLICATION_JSON).content(body), "owner"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1304));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions", Integer.class)).isZero();
+    }
+
+    /** Chấp nhận phiên bằng đúng một slot hoặc dài hơn; so sánh theo instant dù offset khác nhau. */
+    @ParameterizedTest
+    @ValueSource(strings = {"exact", "longer", "offset"})
+    void acceptsCreateWithAtLeastOneCompleteSlot(String variant) throws Exception {
+        var end = fixture.start.plusMinutes(20);
+        if (variant.equals("longer")) end = end.plusSeconds(1);
+        if (variant.equals("offset")) end = end.withOffsetSameInstant(java.time.ZoneOffset.UTC);
+        String body = fixture.creation().replace(fixture.start.plusHours(2).toString(), end.toString());
+        mvc.perform(as(post("/exam-sessions").contentType(MediaType.APPLICATION_JSON).content(body), "owner"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.result.slotDurationMinutes").value(20));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.exam_sessions", Integer.class)).isEqualTo(1);
+    }
+
+    /** Sửa riêng start, end hoặc slot đều kiểm tra trạng thái gộp và rollback cả tiêu đề khi thiếu thời gian. */
+    @ParameterizedTest
+    @ValueSource(strings = {"start", "end", "slot"})
+    void rejectsPatchThatWouldMakeOneStudentUnableToFit(String variant) throws Exception {
+        long id = fixture.create(mvc);
+        var before = jdbc.queryForMap("SELECT * FROM aives.exam_sessions WHERE id=?", id);
+        String change = switch (variant) {
+            case "start" -> "\"scheduledStartAt\":\"" + fixture.start.plusMinutes(101) + "\"";
+            case "end" -> "\"scheduledEndAt\":\"" + fixture.start.plusMinutes(20).minusNanos(1000) + "\"";
+            default -> "\"slotDurationMinutes\":121";
+        };
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"Không được lưu\"," + change + "}"), "owner"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1304));
+        assertThat(jdbc.queryForMap("SELECT * FROM aives.exam_sessions WHERE id=?", id)).isEqualTo(before);
+    }
+
+    /** PATCH có thể đổi cả lịch và slot nếu trạng thái cuối hợp lệ và bằng đúng một slot. */
+    @Test
+    void acceptsMergedPatchThatFitsExactlyOneStudent() throws Exception {
+        long id = fixture.create(mvc);
+        String body = "{\"slotDurationMinutes\":200,\"scheduledEndAt\":\"%s\"}"
+                .formatted(fixture.start.plusMinutes(200));
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON).content(body), "owner"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.slotDurationMinutes").value(200));
+        assertThat(jdbc.queryForObject("SELECT slot_duration_minutes FROM aives.exam_sessions WHERE id=?", Integer.class, id))
+                .isEqualTo(200);
+    }
+
+    /** Dữ liệu cũ có slot quá dài vẫn đọc được và được sửa về thời lượng hợp lệ, không tự sửa database. */
+    @Test
+    void existingOversizedSlotCanBeCorrectedExplicitly() throws Exception {
+        long id = fixture.create(mvc);
+        jdbc.update("UPDATE aives.exam_sessions SET slot_duration_minutes=200 WHERE id=?", id);
+        mvc.perform(as(get("/exam-sessions/" + id), "owner")).andExpect(status().isOk());
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"slotDurationMinutes\":120}"), "owner"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.slotDurationMinutes").value(120));
+    }
+
+    /** Tăng Main không được đi vòng kiểm tra New Exam; mọi trường trong PATCH đều rollback khi thiếu câu. */
+    @ParameterizedTest
+    @ValueSource(ints = {4, 10, 2147483647})
+    void editMainCountRejectsInsufficientPoolAndRollsBackEntirePatch(int requested) throws Exception {
+        long id = fixture.create(mvc);
+        var before = jdbc.queryForMap("SELECT * FROM aives.exam_sessions WHERE id=?", id);
+        String body = "{\"title\":\"Không được lưu\",\"maxMainQuestions\":%d,\"maxFollowUps\":5,\"slotDurationMinutes\":30}"
+                .formatted(requested);
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON).content(body), "owner"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1306))
+                .andExpect(jsonPath("$.message").value("Bạn phải tạo đủ " + requested + " số câu hỏi chính đã được APPROVED"));
+        assertThat(jdbc.queryForMap("SELECT * FROM aives.exam_sessions WHERE id=?", id)).isEqualTo(before);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.student_exam_questions", Integer.class)).isZero();
+    }
+
+    /** Câu chưa duyệt, đã lưu trữ hoặc khác môn không được tính để Edit vượt số câu thực sự có thể thi. */
+    @ParameterizedTest
+    @ValueSource(strings = {"draft", "archived", "otherSubject"})
+    void editMainCountUsesTheSameEligibilityAsStart(String variant) throws Exception {
+        long id = fixture.create(mvc);
+        long extra = jdbc.queryForObject("INSERT INTO aives.questions(subject_id,created_by,content,bloom_level,status) "
+                + "VALUES (1,1,'Câu thứ tư','REMEMBER','APPROVED') RETURNING id", Long.class);
+        switch (variant) {
+            case "draft" -> jdbc.update("UPDATE aives.questions SET status='DRAFT' WHERE id=?", extra);
+            case "archived" -> jdbc.update("UPDATE aives.questions SET archived_at=now() WHERE id=?", extra);
+            default -> jdbc.update("UPDATE aives.questions SET subject_id=2 WHERE id=?", extra);
+        }
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"maxMainQuestions\":4}"), "owner"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1306));
+        assertThat(jdbc.queryForObject("SELECT max_main_questions FROM aives.exam_sessions WHERE id=?", Integer.class, id)).isEqualTo(3);
+    }
+
+    /** Có đúng ngưỡng mới thì cập nhật được dù đã phân công sinh viên; chưa chọn câu hoặc đóng băng rubric. */
+    @Test
+    void editMainCountSucceedsWithEnoughQuestionsWithoutSelectingOrFreezing() throws Exception {
+        long id = fixture.create(mvc);
+        long attempt = fixture.studentExam(id, "ASSIGNED");
+        jdbc.update("INSERT INTO aives.questions(subject_id,created_by,content,bloom_level,status) "
+                + "VALUES (1,1,'Câu thứ tư','REMEMBER','APPROVED')");
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Đã cập nhật\",\"maxMainQuestions\":4,\"maxFollowUps\":20}"), "owner"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.maxMainQuestions").value(4))
+                .andExpect(jsonPath("$.result.title").value("Đã cập nhật"));
+        assertThat(jdbc.queryForObject("SELECT rubric_snapshot IS NULL AND rubric_snapshot_at IS NULL FROM aives.exam_sessions WHERE id=?", Boolean.class, id)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT status FROM aives.student_exams WHERE id=?", String.class, attempt)).isEqualTo("ASSIGNED");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM aives.student_exam_questions", Integer.class)).isZero();
+    }
+
+    /** Giảm Main cũng kiểm tra theo số mới, cho phép sửa khi ngân hàng còn đúng số câu cần dùng. */
+    @Test
+    void reducingMainCountRequiresOnlyTheNewMinimum() throws Exception {
+        long id = fixture.create(mvc);
+        jdbc.update("UPDATE aives.questions SET archived_at=now() WHERE id=1");
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"maxMainQuestions\":2}"), "owner"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.maxMainQuestions").value(2));
+    }
+
+    /** Giảm Main chưa đủ thấp vẫn bị từ chối; không dùng số cũ hoặc bỏ qua kiểm tra khi giảm. */
+    @Test
+    void reducingMainCountStillRejectsAnInsufficientNewPool() throws Exception {
+        long id = fixture.create(mvc);
+        jdbc.update("UPDATE aives.questions SET archived_at=now() WHERE id IN (1,2)");
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"maxMainQuestions\":2}"), "owner"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message")
+                        .value("Bạn phải tạo đủ 2 số câu hỏi chính đã được APPROVED"));
+        assertThat(jdbc.queryForObject("SELECT max_main_questions FROM aives.exam_sessions WHERE id=?", Integer.class, id)).isEqualTo(3);
+    }
+
+    /** Không đổi Main thì giữ hành vi cũ, kể cả nguồn rubric/ngân hàng đã thay đổi sau khi tạo phiên. */
+    @ParameterizedTest
+    @ValueSource(strings = {"{\"title\":\"Tên mới\"}", "{\"maxFollowUps\":2}", "{\"maxMainQuestions\":3,\"title\":\"Tên mới\"}"})
+    void patchesWithoutAnActualMainCountChangeDoNotRequireTheCurrentPool(String body) throws Exception {
+        long id = fixture.create(mvc);
+        jdbc.update("DELETE FROM aives.rubrics");
+        jdbc.update("DELETE FROM aives.questions");
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON).content(body), "owner"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.maxMainQuestions").value(3));
+    }
+
+    /** Main thay đổi yêu cầu rubric hợp lệ như New Exam, lỗi không làm lưu một phần cấu hình. */
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "wrongTotal"})
+    void editMainCountRequiresAReadyRubric(String variant) throws Exception {
+        long id = fixture.create(mvc);
+        if (variant.equals("missing")) jdbc.update("DELETE FROM aives.rubrics");
+        else jdbc.update("UPDATE aives.rubric_criteria SET point_weight=1");
+        var before = jdbc.queryForMap("SELECT * FROM aives.exam_sessions WHERE id=?", id);
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"maxMainQuestions\":2,\"title\":\"Không được lưu\"}"), "owner"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1305));
+        assertThat(jdbc.queryForMap("SELECT * FROM aives.exam_sessions WHERE id=?", id)).isEqualTo(before);
+    }
+
+    /** Edit không chốt cấu hình dựa trên câu đang bị sửa; xung đột giữ nguyên phiên và cho phép thử lại. */
+    @Test
+    void editMainCountConflictsWithQuestionWriterAndRollsBack() throws Exception {
+        long id = fixture.create(mvc);
+        var before = jdbc.queryForMap("SELECT * FROM aives.exam_sessions WHERE id=?", id);
+        try (var blocker = source.getConnection()) {
+            blocker.setAutoCommit(false);
+            try (var statement = blocker.createStatement()) {
+                statement.execute("SELECT id FROM aives.questions WHERE id=1 FOR UPDATE");
+            }
+            mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"maxMainQuestions\":2,\"title\":\"Không được lưu\"}"), "owner"))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(1303));
+            assertThat(jdbc.queryForMap("SELECT * FROM aives.exam_sessions WHERE id=?", id)).isEqualTo(before);
+            blocker.rollback();
+        }
+        mvc.perform(as(patch("/exam-sessions/" + id).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"maxMainQuestions\":2}"), "owner"))
+                .andExpect(status().isOk());
     }
 
     /** PATCH chỉ gửi end vẫn phải được kiểm tra cùng start cũ; title đi kèm cũng rollback khi lỗi. */

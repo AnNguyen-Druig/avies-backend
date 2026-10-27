@@ -66,4 +66,12 @@ public class ExamSession {
     /** Số phút dự kiến cho mỗi sinh viên, phải dương khi được cung cấp. */
     @Column(name = "slot_duration_minutes")
     private Integer slotDurationMinutes;
+
+    /** Rubric JSON độc lập với dữ liệu môn; chỉ chốt một lần khi chọn câu đầu tiên của phiên. */
+    @Column(name = "rubric_snapshot", columnDefinition = "TEXT")
+    private String rubricSnapshot;
+
+    /** Thời điểm chốt rubric; null cùng payload đối với phiên chưa chốt hoặc dữ liệu cũ. */
+    @Column(name = "rubric_snapshot_at")
+    private OffsetDateTime rubricSnapshotAt;
 }

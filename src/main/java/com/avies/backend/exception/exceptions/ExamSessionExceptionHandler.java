@@ -4,9 +4,11 @@ import com.avies.backend.controller.ExamSessionController;
 import com.avies.backend.controller.StudentAssignmentController;
 import com.avies.backend.controller.StudentExamController;
 import com.avies.backend.controller.EligibleStudentController;
+import com.avies.backend.controller.ExamLifecycleController;
 import com.avies.backend.dto.response.ApiResponse;
 import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
+import com.avies.backend.exception.ExamSessionQuestionPoolException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.TypeMismatchException;
@@ -25,11 +27,16 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {ExamSessionController.class, StudentAssignmentController.class,
-        StudentExamController.class, EligibleStudentController.class})
+        StudentExamController.class, EligibleStudentController.class, ExamLifecycleController.class})
 public class ExamSessionExceptionHandler {
     /** Chỉ trả thông điệp ErrorCode đã kiểm soát, không đưa dữ liệu exception nội bộ ra client. */
     @ExceptionHandler(AppException.class)
     public ResponseEntity<ApiResponse<Void>> business(AppException exception) {
+        if (exception instanceof ExamSessionQuestionPoolException shortage) {
+            ErrorCode error = ErrorCode.EXAM_SESSION_QUESTIONS_REQUIRED;
+            return ResponseEntity.status(error.getHttpStatusCode()).body(ApiResponse.<Void>builder()
+                    .code(error.getCode()).message(error.getMessage().formatted(shortage.getRequiredCount())).build());
+        }
         return response(exception.getErrorCode());
     }
 

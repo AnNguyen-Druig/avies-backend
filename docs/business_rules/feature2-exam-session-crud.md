@@ -1,5 +1,7 @@
 # Feature 2 — Exam Session CRUD và quyền giảng viên–môn
 
+> Bổ sung 25/10/2026: tạo phiên mới yêu cầu rubric môn đầy đủ/hợp lệ; thiếu/sai trả 400/1305, "Bạn phải tạo đầy đủ Rubrics cho môn". Chỉ kiểm tra, chưa chốt snapshot lúc tạo. Các phần mô tả baseline bàn giao ban đầu bên dưới cần đọc cùng [quy tắc lifecycle hiện hành](feature2-exam-lifecycle.md).
+
 > Bổ sung P0 Student Assignment (19/10/2026): đã triển khai API gán/thu hồi và lịch slot trong [quy tắc Student Assignment & Scheduling](feature2-student-assignment-scheduling.md). Khi có bất kỳ StudentExam, PATCH không đổi scheduledStartAt/scheduledEndAt/slotDurationMinutes (cùng instant vẫn được); lỗi 409/1405. DELETE và bảo vệ bài đã bắt đầu giữ nguyên. Các mục ghi “chưa gán/chưa chia slot” dưới đây là phạm vi lịch sử của lần bàn giao CRUD trước đó; xem tài liệu mới để biết phạm vi hiện tại.
 
 Ngày triển khai: **19/10/2026**, nhánh `dev/An`. Chỉ backend, dừng ở CRUD phiên thi để review.
@@ -9,7 +11,7 @@ Ngày triển khai: **19/10/2026**, nhánh `dev/An`. Chỉ backend, dừng ở C
 - Dùng ba bảng thi và sáu cột lịch của P0.3 hiện có; không thêm migration, bảng hoặc cột, không bật Hibernate tự sửa schema.
 - Theo xác nhận của Ân, Supabase đã áp dụng `20261016_feature2_exam_foundation.sql`, verifier đạt 66/66 PASS. Đợt code này không kết nối hoặc thay đổi Supabase để xác minh lại thông tin đó.
 - Kiến trúc controller → service → service/impl → repository, mapping DTO tường minh, giữ JWT/backend authentication hiện có.
-- Chưa gán sinh viên, chia slot, chọn câu, start session/student exam hoặc thực hiện Feature 3/4. Không cần câu APPROVED hay sinh viên khi tạo phiên.
+- POST chưa gán sinh viên/chọn đề/chốt snapshot. Tạo phiên yêu cầu rubric hợp lệ và tối thiểu `maxMainQuestions` câu APPROVED đủ điều kiện Start trong môn; thiếu câu trả 400/1306: "Bạn phải tạo đủ n số câu hỏi chính đã được APPROVED". Không cộng Follow-ups hoặc nhân số sinh viên. Quy tắc cập nhật nằm trong [lifecycle hiện hành](feature2-exam-lifecycle.md).
 - OpenAPI suy ra kiểu request/response từ DTO; endpoint có `@Operation`, mã phản hồi và mô tả quyền. Mở Swagger của backend sau khi cấu hình môi trường đúng để thao tác thủ công.
 
 ## 2. API contract

@@ -2,6 +2,7 @@
 -- Mong đợi tất cả passed=true/result=PASS. FAIL cần review định nghĩa thực tế, không tắt constraint.
 -- CHECK được so sánh định nghĩa PostgreSQL, chỉ bỏ khoảng trắng; khác cách biểu diễn cũng FAIL bảo thủ.
 -- Kiểm tra cột gốc theo SQL repository: metadata/số lượng bản ghi live chưa được cung cấp.
+-- CHECK trạng thái lượt thi nhận đúng baseline 3 trạng thái hoặc lifecycle 5 trạng thái đã phê duyệt.
 WITH expected_tables(table_name) AS (
     VALUES ('exam_sessions'), ('student_exams'), ('student_exam_questions')
 ), expected_columns(table_name, column_name, type_name, not_null) AS (
@@ -116,8 +117,12 @@ WITH expected_tables(table_name) AS (
         WHERE c.conrelid = to_regclass('aives.' || e.table_name) AND c.conname = e.constraint_name
           AND c.contype = 'c' AND c.convalidated AND NOT c.connoinherit
           -- Chỉ bỏ khoảng trắng; giữ dấu ngoặc, toán tử và casts để không che khác biệt logic.
-          AND regexp_replace(pg_get_constraintdef(c.oid), '[[:space:]]', '', 'g')
+          AND (regexp_replace(pg_get_constraintdef(c.oid), '[[:space:]]', '', 'g')
               = regexp_replace(e.definition, '[[:space:]]', '', 'g')
+              OR (e.table_name = 'student_exams' AND e.constraint_name = 'student_exams_status_check'
+                  AND regexp_replace(pg_get_constraintdef(c.oid), '[[:space:]]', '', 'g') = regexp_replace(
+                      'CHECK (((status)::text = ANY ((ARRAY[''ASSIGNED''::character varying, ''IN_PROGRESS''::character varying, ''COMPLETED''::character varying, ''ABSENT''::character varying, ''EXPIRED''::character varying])::text[])))',
+                      '[[:space:]]', '', 'g')))
     ) FROM expected_checks e
     UNION ALL
     SELECT 'valid index definition: ' || e.index_name, EXISTS (

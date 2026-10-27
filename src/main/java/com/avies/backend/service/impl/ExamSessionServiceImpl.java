@@ -9,9 +9,13 @@ import com.avies.backend.entity.enums.ExamSessionStatus;
 import com.avies.backend.entity.enums.StudentExamStatus;
 import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
+import com.avies.backend.exception.ExamSessionQuestionPoolException;
 import com.avies.backend.repository.*;
 import com.avies.backend.service.ExamSessionService;
 import com.avies.backend.service.support.ExamAccessPolicy;
+import com.avies.backend.service.support.ExamSnapshotSupport;
+import com.avies.backend.service.support.ExamQuestionEligibility;
+import com.avies.backend.dto.snapshot.ExamRubricSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -19,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.text.Normalizer;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -40,9 +45,15 @@ public class ExamSessionServiceImpl implements ExamSessionService {
 
     /** Chính sách quyền và khóa dùng chung với batch gán/thu hồi sinh viên. */
     private final ExamAccessPolicy access;
+    /** Kiểm tra rubric nguồn theo quy tắc Start khi tạo hoặc đổi số câu chính, không chốt snapshot. */
+    private final ExamSnapshotSupport snapshots;
+    /** Đọc và giữ ổn định đủ câu hợp lệ đến khi tạo/cập nhật cấu hình phiên xong. */
+    private final QuestionRepository questions;
+    /** Dùng đúng điều kiện hợp lệ của Start, không đếm mọi câu APPROVED một cách đơn thuần. */
+    private final ExamQuestionEligibility eligibility;
 
     /**
-     * Tạo phiên UPCOMING trong môn hiện được phân công, chưa cần câu đã duyệt hoặc sinh viên.
+     * Tạo phiên UPCOMING khi môn đã có rubric và đủ câu chính hợp lệ; chưa chọn đề hoặc gán sinh viên.
      */
     @Override
     @Transactional(timeout = 10)
@@ -55,8 +66,20 @@ public class ExamSessionServiceImpl implements ExamSessionService {
                 .slotDurationMinutes(request.getSlotDurationMinutes()).maxMainQuestions(request.getMaxMainQuestions())
                 .maxFollowUps(request.getMaxFollowUps()).build();
         validateFinalState(session);
+        var rubric = snapshots.requireReadySubjectRubric(subject.getId());
+        requireQuestionPool(subject.getId(), session.getMaxMainQuestions(), rubric);
         sessions.saveAndFlush(session);
         return toResponse(session);
+    }
+
+    /** Kiểm tra và khóa đủ N câu theo quy tắc Start; không lưu bộ câu hoặc snapshot khi sửa cấu hình. */
+    private void requireQuestionPool(Long subjectId, int required, ExamRubricSnapshot rubric) {
+        var candidates = eligibility.inspect(questions.findSelectionPool(subjectId), subjectId, rubric).candidates();
+        if (candidates.size() < required) throw new ExamSessionQuestionPoolException(required);
+        var ids = candidates.keySet().stream().sorted().limit(required).toList();
+        if (questions.lockForSelection(ids).size() != required
+                || eligibility.inspect(questions.readSelectionRows(ids), subjectId, rubric).candidates().size() != required)
+            throw new ExamSessionQuestionPoolException(required);
     }
 
     /**
@@ -81,7 +104,7 @@ public class ExamSessionServiceImpl implements ExamSessionService {
     }
 
     /**
-     * Gộp PATCH trên entity vừa refresh dưới khóa; trường bỏ qua không ghi đè dữ liệu mới nhất.
+     * Gộp PATCH dưới khóa; đổi số câu chính phải đủ ngân hàng, trường bỏ qua giữ nguyên dữ liệu.
      */
     @Override
     @Transactional(timeout = 10)
@@ -89,6 +112,13 @@ public class ExamSessionServiceImpl implements ExamSessionService {
         ExamSession session = ownedForWrite(id);
         requireUpcoming(session);
         if (studentExams.hasStartedExam(id, StudentExamStatus.ASSIGNED))
+            throw new AppException(ErrorCode.EXAM_SESSION_IN_USE);
+        boolean mainQuestionsChanged = request.isMaxMainQuestionsPresent()
+                && !Objects.equals(session.getMaxMainQuestions(), request.getMaxMainQuestions());
+        // Không đổi cấu hình đề khi rubric đã chốt, kể cả lượt thi vẫn còn ASSIGNED.
+        if (session.getRubricSnapshotAt() != null && ((request.isMaxMainQuestionsPresent()
+                && !Objects.equals(session.getMaxMainQuestions(), request.getMaxMainQuestions()))
+                || (request.isMaxFollowUpsPresent() && !Objects.equals(session.getMaxFollowUps(), request.getMaxFollowUps()))))
             throw new AppException(ErrorCode.EXAM_SESSION_IN_USE);
         if (studentExams.existsBySessionId(id) && scheduleChanges(session, request))
             throw new AppException(ErrorCode.EXAM_SESSION_SCHEDULE_LOCKED);
@@ -99,6 +129,10 @@ public class ExamSessionServiceImpl implements ExamSessionService {
         if (request.isMaxMainQuestionsPresent()) session.setMaxMainQuestions(request.getMaxMainQuestions());
         if (request.isMaxFollowUpsPresent()) session.setMaxFollowUps(request.getMaxFollowUps());
         validateFinalState(session);
+        if (mainQuestionsChanged) {
+            var rubric = snapshots.requireReadySubjectRubric(session.getSubject().getId());
+            requireQuestionPool(session.getSubject().getId(), session.getMaxMainQuestions(), rubric);
+        }
         sessions.flush();
         return toResponse(session);
     }
@@ -187,7 +221,7 @@ public class ExamSessionServiceImpl implements ExamSessionService {
     }
 
     /**
-     * Kiểm tra toàn bộ trạng thái sau gộp PATCH bằng thời điểm thực, không so giờ địa phương.
+     * Kiểm tra trạng thái sau gộp PATCH theo thời điểm thực; phiên phải đủ ít nhất một slot sinh viên.
      */
     private void validateFinalState(ExamSession session) {
         OffsetDateTime start = session.getScheduledStartAt();
@@ -196,6 +230,8 @@ public class ExamSessionServiceImpl implements ExamSessionService {
                 || session.getSlotDurationMinutes() == null || session.getSlotDurationMinutes() <= 0
                 || session.getMaxMainQuestions() == null || session.getMaxMainQuestions() <= 0
                 || session.getMaxFollowUps() == null || session.getMaxFollowUps() < 0)
+            throw new AppException(ErrorCode.EXAM_SESSION_INVALID_SCHEDULE);
+        if (Duration.between(start, end).compareTo(Duration.ofMinutes(session.getSlotDurationMinutes())) < 0)
             throw new AppException(ErrorCode.EXAM_SESSION_INVALID_SCHEDULE);
     }
 

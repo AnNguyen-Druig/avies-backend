@@ -56,6 +56,8 @@ class StudentAssignmentPostgresIT {
         jdbc = new JdbcTemplate(source);
         fixture = new ExamSessionFixture(jdbc);
         fixture.reset();
+        fixture.readyRubric(1);
+        fixture.readyQuestions();
         for (String name : List.of("student2", "student3", "student4", "percent%_!")) {
             jdbc.update("INSERT INTO aives.users(role_id,username,email,full_name,password_hash) VALUES (3,?,?,?,'DO_NOT_EXPOSE_HASH')",
                     name, name + "@test.invalid", "Sinh viên " + name);
@@ -281,6 +283,8 @@ class StudentAssignmentPostgresIT {
                     .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(1405));
         }
         String sameInstant = fixture.start.withOffsetSameInstant(java.time.ZoneOffset.UTC).toString();
+        // Đổi Main lên 5 chỉ là cấu hình hợp lệ khi ngân hàng có đủ câu đã duyệt.
+        fixture.readyQuestions();
         mvc.perform(as(patch("/exam-sessions/" + session).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"title\":\"Safe metadata\",\"maxMainQuestions\":5,\"scheduledStartAt\":\"" + sameInstant + "\",\"slotDurationMinutes\":20}"), "owner"))
                 .andExpect(status().isOk());

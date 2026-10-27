@@ -1,5 +1,7 @@
 # Feature 2 / P0 — Question Selection & Persistence
 
+> Tài liệu lịch sử của triển khai 19/10/2026 trước rubric cấp môn. Từ bản cập nhật 25/10, quy tắc hiện hành về rubric, snapshot, legacy và triển khai nằm ở [feature2-exam-snapshots.md](feature2-exam-snapshots.md). Các nhận định bên dưới về rubric riêng, không có Rubric CRUD và chưa cần snapshot không còn áp dụng.
+
 Ngày triển khai: 19/10/2026. Baseline đã xác minh: nhánh `dev/An`, HEAD `825cc50`, worktree sạch trước khi code.
 
 ## 1. Phạm vi và hợp đồng

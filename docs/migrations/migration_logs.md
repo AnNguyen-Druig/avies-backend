@@ -159,3 +159,25 @@ Các kết quả trên được xác nhận thông qua Supabase SQL Editor.
 - Chưa triển khai Feature 2 CRUD hoặc Feature 3.
 
 **Next step:** P0.6 — Backend verification sau khi cập nhật database.
+
+---
+
+## 25/10/2026 — Chuẩn bị Feature 2 exam snapshots (CHƯA ÁP DỤNG DATABASE DÙNG CHUNG)
+
+- Người phụ trách dự kiến: Ân. Đã cho phép tạo migration/SQL/diagram; không cho phép agent áp dụng lên Supabase.
+- File mới: `20261025_feature2_exam_snapshots.sql`; verifier chỉ đọc: `feature2_snapshot_postcheck.sql`.
+- Thêm `exam_sessions.rubric_snapshot`, `rubric_snapshot_at` và sáu cột snapshot câu trong `student_exam_questions`.
+- Hai CHECK nhận diện dữ liệu legacy và cấu trúc snapshot; hai trigger/function ngăn ghi đè snapshot đã chốt.
+- Không xóa dữ liệu/cột, không tự backfill. SQL khởi tạo và trang diagram snapshot được đồng bộ trong repository.
+- Chỉ kiểm thử bằng database tạm. Không ghi nhận ngày áp dụng, người chạy thực tế hoặc postcheck Supabase PASS khi chưa có bằng chứng.
+- CẢNH BÁO: không chạy lại migration rubric `20261022` trên database đã chuyển đổi vì file đó có TRUNCATE rubric nguồn.
+- Trạng thái triển khai: **PREPARED — SHARED DATABASE NOT APPLIED BY AGENT**.
+- Xác minh cô lập 25/10/2026, 09:58:12 +07:00: `clean verify -Ppostgres-it`, 546 test PASS (326 Surefire, 220 PostgreSQL Failsafe), không lỗi/bỏ qua. Postcheck snapshot và migration lặp được kiểm tra trong container. Không suy ra trạng thái Supabase từ kết quả này.
+
+## 25/10/2026 — Chuẩn bị Feature 2 Start/Finish/Close (CHƯA ÁP DỤNG SUPABASE BỞI AGENT)
+
+- Ân đồng ý thêm trạng thái ABSENT/EXPIRED; Finish chỉ kiểm tra câu trả lời đã được Feature 3 lưu.
+- Migration: `20261025_feature2_exam_lifecycle.sql`, chỉ thay CHECK `student_exams_status_check`, không cập nhật hoặc xóa dữ liệu.
+- Đồng bộ SQL baseline và enum; không thêm cột, bảng hoặc điểm giả. Quy tắc/API: `../business_rules/feature2-exam-lifecycle.md`.
+- Chỉ kiểm thử migration trên PostgreSQL Docker tạm; người phụ trách cần tự áp dụng trên Supabase trước khi test Close với bản code mới.
+- Xác minh cô lập 25/10/2026, 13:42:33 +07:00: `clean verify -Ppostgres-it` BUILD SUCCESS, 614 test PASS (326 Surefire + 288 PostgreSQL), không lỗi/bỏ qua; 53 test vòng đời mới. Không suy ra kết quả áp dụng Supabase từ test Docker.

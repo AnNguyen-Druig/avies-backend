@@ -13,6 +13,10 @@ import java.util.Optional;
 
 /** Truy cập bài thi sinh viên; không thực hiện thuật toán xếp lịch hay kiểm tra phân công môn. */
 public interface StudentExamRepository extends JpaRepository<StudentExam, Long> {
+    /** Sau khóa parent, khóa toàn bộ lượt theo ID để Close tuần tự với Start/Finish và insert câu. */
+    @Query(value = "SELECT id FROM aives.student_exams WHERE session_id=:id ORDER BY id FOR UPDATE NOWAIT", nativeQuery = true)
+    List<Long> lockForSessionClosure(@Param("id") Long id);
+
     /** Snapshot lịch dưới khóa parent; nạp student để phản hồi batch không phát sinh N+1. */
     @EntityGraph(attributePaths = "student")
     List<StudentExam> findBySessionIdOrderByIdAsc(Long sessionId);

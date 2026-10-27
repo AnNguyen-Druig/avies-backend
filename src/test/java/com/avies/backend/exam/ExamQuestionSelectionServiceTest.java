@@ -26,6 +26,8 @@ class ExamQuestionSelectionServiceTest {
     /** Các liên kết câu đã lưu. */ @Mock private StudentExamQuestionRepository links;
     /** Native scalar pool và khóa câu. */ @Mock private QuestionRepository questions;
     /** Khóa rubric/criteria. */ @Mock private RubricRepository rubrics;
+    /** Chốt/đọc snapshot; persistence được kiểm thử riêng trên PostgreSQL. */
+    @Mock private ExamSnapshotSupport snapshots;
     /** Parent locking policy. */ @Mock private ExamAccessPolicy access;
     /** Persistence context giả, không kết nối DB. */ @Mock private EntityManager em;
     /** Service dùng validator và selector thật, seed cố định. */
@@ -38,8 +40,8 @@ class ExamQuestionSelectionServiceTest {
     /** Dựng service thật mà không nạp Spring application hoặc secrets. */
     @BeforeEach
     void prepare() {
-        service = new ExamQuestionSelectionServiceImpl(exams, links, questions, rubrics, access,
-                new ExamQuestionEligibility(), new ExamQuestionSelector(new Random(17)));
+        service = new ExamQuestionSelectionServiceImpl(exams, links, questions, access,
+                new ExamQuestionEligibility(), new ExamQuestionSelector(new Random(17)), snapshots);
         ReflectionTestUtils.setField(service, "entityManager", em);
         parent = ExamSession.builder().id(7L).subject(Subject.builder().id(1L).build()).maxMainQuestions(2).build();
         exam = StudentExam.builder().id(8L).session(parent).build();
@@ -74,8 +76,7 @@ class ExamQuestionSelectionServiceTest {
     @Test
     void distinguishesInsufficientUsableRubrics() {
         ready();
-        var invalid = row(2, BloomLevel.ANALYZE); invalid.setRubricId(null);
-        when(questions.findSelectionPool(1L)).thenReturn(List.of(row(1, BloomLevel.APPLY), invalid));
+        when(snapshots.captureRubric(parent)).thenThrow(new AppException(ErrorCode.EXAM_QUESTION_RUBRIC_INVALID));
         assertCode(() -> service.selectForStart(8L), ErrorCode.EXAM_QUESTION_RUBRIC_INVALID);
         verify(links, never()).saveAllAndFlush(any());
     }
@@ -122,7 +123,6 @@ class ExamQuestionSelectionServiceTest {
         var initial = List.of(row(1, BloomLevel.APPLY), row(2, BloomLevel.ANALYZE));
         when(questions.findSelectionPool(1L)).thenReturn(new ArrayList<>(initial));
         when(questions.lockForSelection(List.of(1L, 2L))).thenReturn(List.of(1L, 2L));
-        when(rubrics.lockForQuestionSelection(List.of(1L, 2L))).thenReturn(List.of(101L, 102L));
         var changed = row(1, BloomLevel.APPLY); changed.setQuestionVersion(1L);
         when(questions.readSelectionRows(List.of(1L, 2L))).thenReturn(List.of(changed, initial.get(1)));
         assertCode(() -> service.selectForStart(8L), ErrorCode.EXAM_QUESTION_ELIGIBILITY_CHANGED);
@@ -158,6 +158,10 @@ class ExamQuestionSelectionServiceTest {
 
     /** Khóa và đọc child thật được stub đúng scope, không giả lập authorization của Start tương lai. */
     private void ready() {
+        var criterion = new com.avies.backend.dto.snapshot.ExamRubricSnapshot.Criterion(1001L,
+                "Tiêu chí chung", java.math.BigDecimal.TEN, false, 1);
+        lenient().when(snapshots.captureRubric(parent)).thenReturn(new com.avies.backend.dto.snapshot.ExamRubricSnapshot(
+                1, 101L, 1L, "Rubric môn", null, null, List.of(criterion)));
         when(exams.findSessionIdForRemoval(8L)).thenReturn(Optional.of(7L));
         when(access.lockForInternalExamOperation(7L)).thenReturn(parent);
         when(exams.lockForRemoval(8L)).thenReturn(Optional.of(8L));
