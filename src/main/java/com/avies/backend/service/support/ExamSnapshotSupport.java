@@ -8,7 +8,6 @@ import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
 import com.avies.backend.repository.RubricRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -25,7 +24,7 @@ public class ExamSnapshotSupport {
     private final RubricRepository rubrics;
 
     /** Codec riêng cho hợp đồng lưu trữ, không phụ thuộc cấu hình JSON HTTP hoặc dữ liệu người dùng. */
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ExamSnapshotJsonCodec JSON = ExamSnapshotJsonCodec.getInstance();
 
     /** Chốt rubric môn dưới khóa; không tái tạo hoặc ghi đè payload đã có. */
     public ExamRubricSnapshot captureRubric(ExamSession session) {

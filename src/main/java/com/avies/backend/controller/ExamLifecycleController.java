@@ -25,7 +25,7 @@ public class ExamLifecycleController {
     @Operation(summary = "Start Exam — sinh viên bắt đầu lượt của mình", description = "Chỉ trong slot, vào muộn không được cộng giờ. Chọn câu/snapshot và đổi IN_PROGRESS/ONGOING nguyên tử. Body rỗng hoặc {}.")
     public ApiResponse<StartedExamResponse> start(@PathVariable @Positive Long id,
             @Valid @RequestBody(required = false) ExamLifecycleRequest request) {
-        return ApiResponse.<StartedExamResponse>builder().result(service.start(id)).build();
+        return ApiResponse.<StartedExamResponse>builder().result(service.startFromClient(id)).build();
     }
 
     /** Finish không nhận câu trả lời, audio hoặc điểm; Feature 3 phải lưu câu trả lời trước. */

@@ -5,6 +5,10 @@ import com.avies.backend.controller.StudentAssignmentController;
 import com.avies.backend.controller.StudentExamController;
 import com.avies.backend.controller.EligibleStudentController;
 import com.avies.backend.controller.ExamLifecycleController;
+import com.avies.backend.controller.OralExamController;
+import com.avies.backend.controller.OralExamRuntimeController;
+import com.avies.backend.controller.OralSpeechController;
+import com.avies.backend.controller.OralTranscriptionController;
 import com.avies.backend.dto.response.ApiResponse;
 import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
@@ -27,7 +31,7 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {ExamSessionController.class, StudentAssignmentController.class,
-        StudentExamController.class, EligibleStudentController.class, ExamLifecycleController.class})
+        StudentExamController.class, EligibleStudentController.class, ExamLifecycleController.class, OralExamController.class, OralExamRuntimeController.class, OralSpeechController.class, OralTranscriptionController.class})
 public class ExamSessionExceptionHandler {
     /** Chỉ trả thông điệp ErrorCode đã kiểm soát, không đưa dữ liệu exception nội bộ ra client. */
     @ExceptionHandler(AppException.class)
@@ -48,7 +52,10 @@ public class ExamSessionExceptionHandler {
 
     /** JSON sai kiểu, timestamp thiếu offset, trường ngoài DTO hoặc validation sai đều trả 400. */
     @ExceptionHandler({BindException.class, ConstraintViolationException.class, HandlerMethodValidationException.class,
-            TypeMismatchException.class, HttpMessageNotReadableException.class})
+            TypeMismatchException.class, HttpMessageNotReadableException.class,
+            org.springframework.web.multipart.support.MissingServletRequestPartException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.web.multipart.MaxUploadSizeExceededException.class})
     public ResponseEntity<ApiResponse<Void>> invalid(Exception exception) {
         return response(ErrorCode.INVALID_REQUEST);
     }

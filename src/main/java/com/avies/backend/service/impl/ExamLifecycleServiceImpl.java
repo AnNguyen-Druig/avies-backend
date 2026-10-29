@@ -49,6 +49,8 @@ public class ExamLifecycleServiceImpl implements ExamLifecycleService {
     private final ExamTranscriptRepository transcripts;
     /** Đồng hồ máy chủ có thể cố định trong test. */
     private final Clock clock;
+    /** Khi bật Feature 3, Student chỉ vào phòng oral, không lấy toàn bộ đề qua endpoint Start cũ. */
+    @org.springframework.beans.factory.annotation.Value("${ORAL_AI_ENABLED:false}") private boolean oralEnabled;
     /** Refresh dưới khóa để không quyết định trên entity đã cũ trong persistence context. */
     @PersistenceContext
     private EntityManager entityManager;
@@ -57,6 +59,16 @@ public class ExamLifecycleServiceImpl implements ExamLifecycleService {
     @Override
     public StartedExamResponse start(Long studentExamId) {
         return command(() -> startLocked(studentExamId));
+    }
+
+    /** Giữ đường gọi nội bộ Start, chặn đường HTTP cũ khi đang triển khai thi bằng giọng nói. */
+    @Override public StartedExamResponse startFromClient(Long studentExamId) {
+        if (oralEnabled) throw new AppException(ErrorCode.ORAL_ACTION_NOT_ALLOWED);
+        return command(() -> {
+            ownLockedAttempt(studentExamId);
+            if (transcripts.hasOralProgress(studentExamId)) throw new AppException(ErrorCode.ORAL_ACTION_NOT_ALLOWED);
+            return startLocked(studentExamId);
+        });
     }
 
     /** Phần ghi Start luôn chạy trong transaction do phương thức public mở. */
@@ -96,12 +108,29 @@ public class ExamLifecycleServiceImpl implements ExamLifecycleService {
     /** Không nhận bài làm/điểm từ client; chỉ hoàn thành trong slot khi đủ câu trả lời đã được lưu. */
     @Override
     public ExamAttemptResponse finish(Long studentExamId) {
-        return command(() -> finishLocked(studentExamId));
+        return command(() -> finishLocked(ownLockedAttempt(studentExamId)));
+    }
+
+    /** Worker không cần JWT Student nhưng vẫn khóa cùng thứ tự và bắt buộc có bằng chứng oral hoàn chỉnh. */
+    @Override
+    public ExamAttemptResponse finishOral(Long studentExamId) {
+        return command(() -> {
+            var exam = exams.findById(studentExamId).orElseThrow(() -> new AppException(ErrorCode.STUDENT_EXAM_NOT_FOUND));
+            Long sessionId = exam.getSession().getId(); Long studentId = exam.getStudent().getId();
+            access.lockForInternalExamOperation(sessionId);
+            if (users.lockStudentsForAssignment(List.of(studentId)).isEmpty()) throw new AppException(ErrorCode.EXAM_SESSION_CONFLICT);
+            exams.lockForRemoval(studentExamId).orElseThrow(() -> new AppException(ErrorCode.STUDENT_EXAM_NOT_FOUND));
+            entityManager.refresh(exam);
+            if (!Objects.equals(sessionId, exam.getSession().getId()) || !Objects.equals(studentId, exam.getStudent().getId()))
+                throw new AppException(ErrorCode.EXAM_SESSION_CONFLICT);
+            questions.lockPersistedSet(studentExamId);
+            if (!transcripts.oralCompletionState(studentExamId, now()).orElse(false)) throw new AppException(ErrorCode.EXAM_ANSWERS_NOT_READY);
+            return finishLocked(exam);
+        });
     }
 
     /** Chốt trạng thái hoàn thành sau khi đọc bằng chứng dưới cùng bộ khóa. */
-    private ExamAttemptResponse finishLocked(Long studentExamId) {
-        StudentExam exam = ownLockedAttempt(studentExamId);
+    private ExamAttemptResponse finishLocked(StudentExam exam) {
         if (exam.getStatus() == StudentExamStatus.COMPLETED) {
             if (exam.getStartedAt() == null || exam.getCompletedAt() == null || exam.getCompletedAt().isBefore(exam.getStartedAt()))
                 throw new AppException(ErrorCode.EXAM_LIFECYCLE_INCONSISTENT);
@@ -121,7 +150,8 @@ public class ExamLifecycleServiceImpl implements ExamLifecycleService {
                 .filter(row -> row.content() != null && !row.content().isBlank() && row.createdAt() != null
                         && !row.createdAt().isBefore(exam.getStartedAt()) && !row.createdAt().isAfter(timestamp))
                 .map(row -> row.studentExamQuestionId()).collect(Collectors.toSet());
-        if (!context.questions().stream().allMatch(question -> answered.contains(question.studentExamQuestionId())))
+        boolean legacyReady = context.questions().stream().allMatch(question -> answered.contains(question.studentExamQuestionId()));
+        if (!transcripts.oralCompletionState(exam.getId(), timestamp).orElse(legacyReady))
             throw new AppException(ErrorCode.EXAM_ANSWERS_NOT_READY);
         OffsetDateTime completedAt = now();
         requireWithinSlot(exam, completedAt);
