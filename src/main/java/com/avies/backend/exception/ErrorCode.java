@@ -104,7 +104,43 @@ public enum ErrorCode {
     /** Rubric chưa có tiêu chí nào. */
     RUBRIC_CRITERIA_EMPTY(1603, "Rubric phải có ít nhất một tiêu chí đánh giá", HttpStatus.BAD_REQUEST),
     /** Rubric đang được dùng không được xóa. */
-    RUBRIC_IN_USE(1604, "Rubric đang được sử dụng trong kỳ thi, không thể xóa", HttpStatus.CONFLICT);
+    RUBRIC_IN_USE(1604, "Rubric đang được sử dụng trong kỳ thi, không thể xóa", HttpStatus.CONFLICT),
+    /** Chưa mở hội thoại cho lượt thi này. */
+    ORAL_PROGRESS_NOT_FOUND(1800, "Chưa có tiến trình thi vấn đáp", HttpStatus.NOT_FOUND),
+    /** Lệnh không đúng bước hoặc không đúng lượt hỏi hiện hành. */
+    ORAL_ACTION_NOT_ALLOWED(1801, "Thao tác không phù hợp với bước thi hiện tại", HttpStatus.CONFLICT),
+    /** Tab đang giữ dữ liệu hoặc requestId không còn khớp yêu cầu. */
+    ORAL_STALE_COMMAND(1802, "Tiến trình đã thay đổi; hãy tải lại trước khi thao tác", HttpStatus.CONFLICT),
+    /** Chỉ một tab được điều khiển trong thời gian lease còn hiệu lực. */
+    ORAL_ACTIVE_CLIENT(1803, "Lượt thi đang được điều khiển ở tab khác; hãy đóng tab đó hoặc chờ quyền tương tác hết hạn", HttpStatus.CONFLICT),
+    /** Không ghép transcript cũ vào hội thoại mới để giả làm lịch sử. */
+    ORAL_LEGACY_EVIDENCE(1804, "Lượt thi đã có hội thoại cũ; cần kiểm tra trước khi mở tiến trình mới", HttpStatus.CONFLICT),
+    /** Callback nhà cung cấp phải đúng mã công việc, ngôn ngữ và nội dung hợp lệ. */
+    ORAL_PROVIDER_RESULT_INVALID(1805, "Kết quả xử lý giọng nói hoặc hội thoại chưa hợp lệ", HttpStatus.CONFLICT),
+    /** Code có thể triển khai trước migration mà API cũ vẫn hoạt động. */
+    ORAL_SCHEMA_NOT_READY(1806, "Dữ liệu thi vấn đáp chưa được nâng cấp; vui lòng liên hệ người quản lý hệ thống", HttpStatus.SERVICE_UNAVAILABLE),
+    /** TTS chưa bật hoặc cấu hình/key chưa được dịch vụ chấp nhận. */
+    ORAL_SPEECH_NOT_READY(1807, "Giọng đọc chưa sẵn sàng; vui lòng kiểm tra cấu hình dịch vụ TTS", HttpStatus.SERVICE_UNAVAILABLE),
+    /** Mạng, timeout hoặc audio không đúng định dạng; không tính là Student trả lời sai. */
+    ORAL_SPEECH_FAILED(1808, "Chưa tạo được giọng đọc; hãy thử lại lượt hiện tại", HttpStatus.BAD_GATEWAY),
+    /** Quota dịch vụ hoặc số lần tổng hợp đồng thời đã đạt giới hạn. */
+    ORAL_SPEECH_QUOTA(1809, "Dịch vụ giọng đọc đang bận hoặc đã hết hạn mức; vui lòng thử lại sau", HttpStatus.TOO_MANY_REQUESTS),
+    /** STT bị tắt hoặc key/cấu hình bị từ chối. */
+    ORAL_TRANSCRIPTION_NOT_READY(1810, "Nhận dạng giọng nói chưa sẵn sàng; vui lòng kiểm tra cấu hình Groq", HttpStatus.SERVICE_UNAVAILABLE),
+    /** Không biến lỗi kỹ thuật thành câu trả lời rỗng hoặc điểm không. */
+    ORAL_TRANSCRIPTION_FAILED(1811, "Chưa nhận dạng được câu trả lời; vui lòng thử lại lượt xử lý", HttpStatus.BAD_GATEWAY),
+    /** Không tự retry liên tục khi đã hết quota. */
+    ORAL_TRANSCRIPTION_QUOTA(1812, "Dịch vụ nhận dạng đang bận hoặc đã hết hạn mức; vui lòng thử lại sau", HttpStatus.TOO_MANY_REQUESTS),
+    /** File rỗng/quá lớn/định dạng không được hỗ trợ. */
+    ORAL_AUDIO_INVALID(1813, "Bản ghi âm không hợp lệ; hãy ghi lại bằng micro của trình duyệt", HttpStatus.BAD_REQUEST),
+    /** Submission đã gắn với nội dung âm thanh khác. */
+    ORAL_AUDIO_CONFLICT(1814, "Bản ghi của lượt xử lý đã được chốt; không thể thay bằng bản ghi khác", HttpStatus.CONFLICT),
+    /** AI bị tắt hoặc key/model chưa hợp lệ. */
+    ORAL_DECISION_NOT_READY(1815, "AI hội thoại chưa sẵn sàng; vui lòng kiểm tra cấu hình Gemini", HttpStatus.SERVICE_UNAVAILABLE),
+    /** Không dùng lỗi AI như một quyết định chuyển câu hoặc điểm không. */
+    ORAL_DECISION_FAILED(1816, "Chưa quyết định được lượt hỏi tiếp theo; vui lòng thử lại", HttpStatus.BAD_GATEWAY),
+    /** Quota AI được tách khỏi quota giọng đọc và STT. */
+    ORAL_DECISION_QUOTA(1817, "AI hội thoại đang bận hoặc đã hết hạn mức; vui lòng thử lại sau", HttpStatus.TOO_MANY_REQUESTS);
 
 
     private final int code;
