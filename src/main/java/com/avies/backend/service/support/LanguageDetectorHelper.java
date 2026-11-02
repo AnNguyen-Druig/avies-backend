@@ -86,28 +86,37 @@ public final class LanguageDetectorHelper {
             }
         }
 
-        // Nếu số lượng từ dừng tiếng Anh áp đảo hoàn toàn và số dấu tiếng Việt rất ít (ví dụ header/tên trường)
-        if (enWordCount >= 3 && enWordCount > viWordCount * 2 && accentCount < 10) {
-            log.debug("Phát hiện ngôn ngữ 'en' do từ vựng tiếng Anh áp đảo (enWords={}, viWords={}, accentCount={})",
-                    enWordCount, viWordCount, accentCount);
+        // 1. Nếu số lượng từ dừng tiếng Anh áp đảo hoàn toàn từ vựng tiếng Việt
+        if (enWordCount >= 3 && enWordCount > viWordCount * 2) {
+            log.debug("Phát hiện ngôn ngữ 'en' do từ vựng tiếng Anh áp đảo (enWords={}, viWords={}, accentRatio={})",
+                    enWordCount, viWordCount, accentRatio);
             return LANG_EN;
         }
 
-        // Trong tiếng Việt chuẩn, ký tự dấu chiếm khoảng 2% - 6% tổng số ký tự.
-        // Nếu có >= 10 dấu hoặc tỷ lệ dấu >= 0.8% thì chắc chắn là tiếng Việt.
-        if (accentCount >= 10 || (accentCount >= 3 && accentRatio >= 0.008)) {
-            log.debug("Phát hiện ngôn ngữ 'vi' theo số lượng ký tự dấu: {} (tỷ lệ: {})", accentCount, accentRatio);
-            return LANG_VI;
-        }
-
-        if (viWordCount >= 3 || (accentCount > 0 && viWordCount >= 1)) {
+        // 2. Nếu từ vựng tiếng Việt áp đảo
+        if (viWordCount >= 3 && viWordCount > enWordCount) {
             log.debug("Phát hiện ngôn ngữ 'vi' theo từ khóa phổ biến: {}, dấu: {}", viWordCount, accentCount);
             return LANG_VI;
         }
 
-        // Nếu không có dấu tiếng Việt và không có từ vựng tiếng Việt -> Kết luận là 'en'
+        // 3. Trong tiếng Việt chuẩn, ký tự dấu chiếm khoảng 2% - 6% tổng số ký tự.
+        // Chỉ kết luận tiếng Việt khi tỷ lệ dấu đủ cao (>= 0.8%)
+        if (accentCount >= 10 && accentRatio >= 0.008) {
+            log.debug("Phát hiện ngôn ngữ 'vi' theo số lượng ký tự dấu: {} (tỷ lệ: {})", accentCount, accentRatio);
+            return LANG_VI;
+        }
+
+        if (enWordCount > viWordCount) {
+            return LANG_EN;
+        }
+
+        if (accentRatio >= 0.008) {
+            return LANG_VI;
+        }
+
+        // Nếu không có dấu tiếng Việt hoặc dấu không đáng kể -> Kết luận là 'en'
         log.debug("Phát hiện ngôn ngữ 'en' (accentCount={}, viWordCount={}, sampleLen={})",
                 accentCount, viWordCount, normalized.length());
-        return LANG_EN;
+        return accentCount == 0 ? LANG_EN : LANG_VI;
     }
 }

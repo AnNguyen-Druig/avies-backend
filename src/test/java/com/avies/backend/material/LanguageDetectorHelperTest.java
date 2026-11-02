@@ -31,6 +31,19 @@ class LanguageDetectorHelperTest {
     }
 
     @Test
+    @DisplayName("Phát hiện văn bản tiếng Anh dù có 5 headers định dạng tiếng Việt")
+    void detectEnglishWithMultipleVietnameseHeaders() {
+        String text = "--- Đoạn 1 (Tài liệu: SWD392_RDS Document Case Study) ---\n"
+                + "The system architecture of Amazon RDS allows applications to scale relational databases in the cloud. "
+                + "It provides cost-effective and resizable capacity while automating time-consuming administration tasks.\n\n"
+                + "--- Đoạn 2 (Tài liệu: SWD392_RDS Document Case Study) ---\n"
+                + "Multi-AZ deployments provide enhanced availability and durability for Database Instances in production workloads.\n\n"
+                + "--- Đoạn 3 (Tài liệu: SWD392_RDS Document Case Study) ---\n"
+                + "Amazon RDS creates a primary DB Instance and synchronously replicates the data to a standby instance in a different Availability Zone.";
+        assertThat(LanguageDetectorHelper.detectLanguage(text)).isEqualTo(LanguageDetectorHelper.LANG_EN);
+    }
+
+    @Test
     @DisplayName("Văn bản null hoặc rỗng trả về mặc định tiếng Việt")
     void detectNullOrBlank() {
         assertThat(LanguageDetectorHelper.detectLanguage(null)).isEqualTo(LanguageDetectorHelper.LANG_VI);

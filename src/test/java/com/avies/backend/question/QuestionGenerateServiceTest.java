@@ -210,6 +210,7 @@ class QuestionGenerateServiceTest {
 
         LearningMaterialChunkRepository.ChunkView englishChunk = mock(LearningMaterialChunkRepository.ChunkView.class);
         when(englishChunk.getMaterialTitle()).thenReturn("Software Architecture Textbook");
+        when(englishChunk.getMaterialLanguage()).thenReturn("en");
         when(englishChunk.getContent()).thenReturn("Microservices architecture is a design approach to build a single application as a set of small services.");
         when(chunkRepository.searchSimilarChunks(eq(subject.getId()), anyString(), eq(5)))
                 .thenReturn(List.of(englishChunk));

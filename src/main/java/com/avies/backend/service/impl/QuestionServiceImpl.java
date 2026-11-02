@@ -307,8 +307,11 @@ public class QuestionServiceImpl implements QuestionService {
             throw new AppException(ErrorCode.NO_RELEVANT_MATERIALS, "Không tìm thấy tài liệu phù hợp trong môn học để sinh câu hỏi.");
         }
 
-        // 3. Ghép context từ 5 đoạn tài liệu
+        // 3. Ghép context từ 5 đoạn tài liệu và xác định ngôn ngữ tài liệu
         StringBuilder contextBuilder = new StringBuilder();
+        StringBuilder rawChunksText = new StringBuilder();
+        String detectedMaterialLang = null;
+
         for (int i = 0; i < chunks.size(); i++) {
             LearningMaterialChunkRepository.ChunkView chunk = chunks.get(i);
             String docTitle = (chunk.getMaterialTitle() != null && !chunk.getMaterialTitle().isBlank())
@@ -316,14 +319,21 @@ public class QuestionServiceImpl implements QuestionService {
                     : "Tài liệu môn học";
             contextBuilder.append(String.format("--- Đoạn %d (Tài liệu: %s) ---\n%s\n\n",
                     i + 1, docTitle, chunk.getContent()));
+            rawChunksText.append(chunk.getContent()).append("\n");
+
+            if (detectedMaterialLang == null && chunk.getMaterialLanguage() != null && !chunk.getMaterialLanguage().isBlank()) {
+                detectedMaterialLang = chunk.getMaterialLanguage().trim().toLowerCase(Locale.ROOT);
+            }
         }
 
-        // Xác định ngôn ngữ mục tiêu: nếu không truyền hoặc 'AUTO' -> tự động nhận diện từ context tài liệu
+        // Xác định ngôn ngữ mục tiêu: nếu không truyền hoặc 'AUTO' -> tự động nhận diện từ tài liệu
         String targetLanguage;
         if (request.getLanguage() != null && !request.getLanguage().isBlank() && !"AUTO".equalsIgnoreCase(request.getLanguage().trim())) {
             targetLanguage = request.getLanguage().trim().toLowerCase(Locale.ROOT);
+        } else if (detectedMaterialLang != null) {
+            targetLanguage = detectedMaterialLang;
         } else {
-            targetLanguage = LanguageDetectorHelper.detectLanguage(contextBuilder.toString());
+            targetLanguage = LanguageDetectorHelper.detectLanguage(rawChunksText.toString());
         }
 
         // 4. Gọi AI sinh câu hỏi và rubric theo ngôn ngữ mục tiêu
