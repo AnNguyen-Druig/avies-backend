@@ -25,7 +25,7 @@ class OralDispatchTest {
         when(sttSettings.ready()).thenReturn(true); when(aiSettings.ready()).thenReturn(true);
         var sttJob=UUID.randomUUID(); var aiJob=UUID.randomUUID();
         var sttWork=new OralTranscriptionWork(1,sttJob,UUID.randomUUID(),"vi","hash");
-        var aiWork=new OralDecisionWork(1,aiJob,UUID.randomUUID(),"vi","Câu hỏi?",List.of(),true);
+        var aiWork=new OralDecisionWork(1,aiJob,UUID.randomUUID(),"vi","Câu hỏi?",List.of(),true,OralDecisionWork.Assessment.empty());
         when(oral.claimTranscription(1L,sttJob)).thenReturn(sttWork); when(oral.claimDecision(1L,aiJob)).thenReturn(aiWork);
         var bytes=new OralAudioPayload(new byte[]{1,2},"audio/webm","webm","hash"); when(store.read(sttJob,"hash")).thenReturn(bytes);
         var completed=new CountDownLatch(2); long caller=Thread.currentThread().threadId();

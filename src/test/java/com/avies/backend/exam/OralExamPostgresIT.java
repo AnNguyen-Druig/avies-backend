@@ -60,6 +60,8 @@ class OralExamPostgresIT {
     /** Context web có method security và exception handler thật. */ @Autowired private WebApplicationContext context;
     /** PostgreSQL container do test sở hữu. */ @Autowired private DataSource source;
     /** Điều phối thật, không mock service. */ @Autowired private OralExamService service;
+    /** Kiểm tra chuỗi khóa gom vẫn bảo vệ đủ các hàng như Feature 2. */ @Autowired private com.avies.backend.service.support.OralExamAccessPolicy oralAccess;
+    /** Query ứng viên thật cho tác vụ hết giờ, không mock trạng thái DB. */ @Autowired private com.avies.backend.repository.StudentExamRepository studentExams;
     /** Kiểm tra Finish/Close không bị luồng mới vượt qua. */ @Autowired private ExamLifecycleService lifecycle;
     /** Giữ transaction để kiểm tra khóa đồng thời. */ @Autowired private PlatformTransactionManager manager;
     /** SQL quan sát sau commit. */ private JdbcTemplate jdbc;
@@ -97,6 +99,136 @@ class OralExamPostgresIT {
     /** Không giữ danh tính test ngoài phạm vi từng ca. */
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
 
+    /** Không gọi GET phòng thi: worker tự chốt đúng deadline, giữ transcript và trạng thái phiên. */
+    @Test void expiryWorkerUpdatesAbandonedAttemptAtDeadlineAndPreservesEvidence() {
+        open(); listen(); answer(false); listen(); var deadline=state.deadline();
+        var evidence=jdbc.queryForList("SELECT * FROM aives.transcripts ORDER BY id");
+        var worker=new com.avies.backend.service.support.ExamAttemptExpiryWorker(studentExams,service,clock);
+        at(deadline.minusNanos(1000)); worker.expire();
+        assertThat(jdbc.queryForObject("SELECT status FROM aives.student_exams WHERE id=?",String.class,exam)).isEqualTo("IN_PROGRESS");
+        at(deadline); SecurityContextHolder.clearContext(); worker.expire();
+        assertThat(jdbc.queryForObject("SELECT status FROM aives.student_exams WHERE id=?",String.class,exam)).isEqualTo("EXPIRED");
+        assertThat(jdbc.queryForObject("SELECT phase FROM aives.oral_exam_progress WHERE student_exam_id=?",String.class,exam)).isEqualTo("EXPIRED");
+        assertThat(jdbc.queryForObject("SELECT status FROM aives.exam_sessions WHERE id=?",String.class,parent)).isEqualTo("ONGOING");
+        assertThat(jdbc.queryForObject("SELECT completed_at FROM aives.student_exams WHERE id=?",OffsetDateTime.class,exam)).isNull();
+        assertThat(jdbc.queryForList("SELECT * FROM aives.transcripts ORDER BY id")).isEqualTo(evidence);
+        var versions=progressVersions(); worker.expire(); assertThat(progressVersions()).isEqualTo(versions);
+    }
+
+    /** Bài đã hoàn thành không đổi thành EXPIRED, kể cả ID ứng viên được đọc trước khi Finish commit. */
+    @Test void overdueCandidateCannotOverwriteCompletedAttempt() {
+        jdbc.update("UPDATE aives.exam_sessions SET max_main_questions=1 WHERE id=?",parent);
+        open(); listen(); answer(false); var completedAt=jdbc.queryForObject("SELECT completed_at FROM aives.student_exams WHERE id=?",OffsetDateTime.class,exam);
+        var versions=progressVersions(); at(state.deadline()); SecurityContextHolder.clearContext();
+        assertThat(service.expireOverdue(exam)).isFalse();
+        assertThat(jdbc.queryForObject("SELECT status FROM aives.student_exams WHERE id=?",String.class,exam)).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("SELECT completed_at FROM aives.student_exams WHERE id=?",OffsetDateTime.class,exam)).isEqualTo(completedAt);
+        assertThat(progressVersions()).isEqualTo(versions);
+    }
+
+    /** Lượt Feature 2 đã Start nhưng chưa có oral progress vẫn hết giờ; lượt ASSIGNED không bị đánh vắng tự động. */
+    @Test void expiryWorkerHandlesLegacyAttemptAndLeavesUnstartedStudentAlone() {
+        lifecycle.start(exam); long assigned=fixture.exam(parent,6,2);
+        at(fixture.base.start.plusMinutes(41)); SecurityContextHolder.clearContext();
+        new com.avies.backend.service.support.ExamAttemptExpiryWorker(studentExams,service,clock).expire();
+        assertThat(jdbc.queryForObject("SELECT status FROM aives.student_exams WHERE id=?",String.class,exam)).isEqualTo("EXPIRED");
+        assertThat(jdbc.queryForObject("SELECT status FROM aives.student_exams WHERE id=?",String.class,assigned)).isEqualTo("ASSIGNED");
+        assertThat(count("oral_exam_progress")).isZero(); assertThat(count("transcripts")).isZero(); assertThat(count("student_exam_questions")).isEqualTo(2);
+    }
+
+    /** Worker không ghi đè Finish đang giữ khóa; lần sau vẫn giữ COMPLETED do Finish đã chốt trước hạn. */
+    @Test void expiryWorkerAndConcurrentFinishPreserveCommittedCompletion() throws Exception {
+        jdbc.update("UPDATE aives.exam_sessions SET max_main_questions=1 WHERE id=?",parent);
+        var job=transcribedFixture(); var work=service.claimDecision(exam,job);
+        var held=new CountDownLatch(1); var release=new CountDownLatch(1);
+        try (var pool=Executors.newSingleThreadExecutor()) {
+            var finishing=pool.submit(() -> new TransactionTemplate(manager).executeWithoutResult(tx -> {
+                service.completeDecision(work,com.avies.backend.service.support.OralDecisionResult.advance(),null); held.countDown();
+                try { if (!release.await(10,TimeUnit.SECONDS)) throw new IllegalStateException("Fixture timeout"); }
+                catch (InterruptedException stop) { Thread.currentThread().interrupt(); }
+            }));
+            try {
+                assertThat(held.await(10,TimeUnit.SECONDS)).isTrue(); at(fixture.base.start.plusMinutes(20));
+                new com.avies.backend.service.support.ExamAttemptExpiryWorker(studentExams,service,clock).expire();
+            } finally { release.countDown(); }
+            finishing.get(10,TimeUnit.SECONDS);
+        }
+        new com.avies.backend.service.support.ExamAttemptExpiryWorker(studentExams,service,clock).expire();
+        assertThat(jdbc.queryForObject("SELECT status FROM aives.student_exams WHERE id=?",String.class,exam)).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("SELECT phase FROM aives.oral_exam_progress WHERE student_exam_id=?",String.class,exam)).isEqualTo("COMPLETED");
+    }
+
+    /** Callback muộn không phục hồi lượt đã bị worker chốt EXPIRED, transcript đã lưu vẫn còn nguyên. */
+    @Test void lateDecisionCannotUndoBackgroundExpiry() {
+        var job=transcribedFixture(); var work=service.claimDecision(exam,job); at(state.deadline());
+        new com.avies.backend.service.support.ExamAttemptExpiryWorker(studentExams,service,clock).expire();
+        service.completeDecision(work,com.avies.backend.service.support.OralDecisionResult.advance(),null);
+        assertThat(jdbc.queryForObject("SELECT status FROM aives.student_exams WHERE id=?",String.class,exam)).isEqualTo("EXPIRED");
+        assertThat(answerCount()).isEqualTo(1); assertThat(count("oral_exam_turns")).isEqualTo(1);
+    }
+
+    /** Một lần đọc aggregate và một lần save chỉ hai lệnh SQL, giữ đủ JSON/date/enum/metadata của dữ liệu thật. */
+    @Test void aggregateReadAndSaveUseTwoDatabaseCommandsWithoutLosingEvidence() {
+        open(); listen(); command(OralExamAction.SUBMIT); var job=state.submissionId(); attachFixture(job);
+        providerTranscript(job,"Câu trả lời STT thật fixture");
+        var counted=new OralJdbcCounter(source); var repo=new com.avies.backend.repository.OralExamRepository(counted);
+        repo.findSnapshot(exam).orElseThrow();
+        var tx=new TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(counted));
+        tx.executeWithoutResult(status -> {
+            var sql=new JdbcTemplate(counted);
+            sql.queryForList("SELECT id FROM aives.exam_sessions WHERE id=? FOR UPDATE",parent);
+            sql.queryForList("SELECT id FROM aives.student_exams WHERE id=? FOR UPDATE",exam);
+            counted.executions.set(0);
+            var progress=repo.findLocked(exam).orElseThrow();
+            progress.setRevision(progress.getRevision()+1); repo.save(progress);
+            assertThat(counted.executions.get()).isEqualTo(2);
+            assertThat(repo.findSnapshot(exam).orElseThrow()).isEqualTo(progress);
+            assertThat(progress.getSubmissions().getFirst().getAudioSha256()).isNotBlank();
+            assertThat(progress.getTurns().getFirst().getAnswerText()).isEqualTo("Câu trả lời STT thật fixture");
+        });
+        assertThat(answerCount()).isEqualTo(1);
+    }
+
+    /** Hết quota/ngân sách follow-up thì chốt ADVANCE cùng STT, không chờ claim và callback AI vô ích. */
+    @ParameterizedTest @ValueSource(strings={"quota","budget"})
+    void transcriptionAdvancesWithoutAiTransactionsWhenFollowUpCannotBeAsked(String exhausted) {
+        if (exhausted.equals("quota")) jdbc.update("UPDATE aives.exam_sessions SET max_follow_ups=0 WHERE id=?",parent);
+        open(); listen(); command(OralExamAction.SUBMIT); var job=state.submissionId(); attachFixture(job);
+        if (exhausted.equals("budget")) jdbc.update("UPDATE aives.oral_question_progress SET answer_used_ms=answer_budget_ms WHERE student_exam_id=? AND question_order=1",exam);
+        var work=service.claimTranscription(exam,job); service.completeTranscription(work,"Em đã trả lời bằng giọng nói.",null);
+        student(); state=service.get(exam);
+        assertThat(state.phase()).isEqualTo(OralExamPhase.PREPARING); assertThat(state.currentQuestionOrder()).isEqualTo(2);
+        assertThat(state.followUpsUsed()).isZero(); assertThat(answerCount()).isEqualTo(1);
+        assertThat(service.claimDecision(exam,job)).isNull();
+        assertThat(jdbc.queryForObject("SELECT decision_kind FROM aives.oral_answer_submissions WHERE id=?",String.class,job)).isEqualTo("ADVANCE");
+        assertThat(events.stream(com.avies.backend.service.support.OralWorkReady.class).filter(e -> e.stage()==com.avies.backend.service.support.OralWorkReady.Stage.DECISION).count()).isZero();
+    }
+
+    /** CTE phải thực sự lấy mọi khóa, không bị optimizer bỏ và không cho writer khác đổi root/snapshot. */
+    @ParameterizedTest @ValueSource(strings={"owner","subject","session","student","exam","question"})
+    void compactHierarchyStillLocksEveryProtectedRow(String target) throws Exception {
+        open();
+        var entered=new CountDownLatch(1); var release=new CountDownLatch(1);
+        try (var workers=Executors.newSingleThreadExecutor()) {
+            var held=workers.submit(() -> new TransactionTemplate(manager).executeWithoutResult(tx -> {
+                oralAccess.internal(exam); entered.countDown();
+                try { if (!release.await(10,TimeUnit.SECONDS)) throw new IllegalStateException("Fixture timeout"); }
+                catch (InterruptedException stop) { Thread.currentThread().interrupt(); }
+            }));
+            try {
+                assertThat(entered.await(10,TimeUnit.SECONDS)).isTrue();
+                String table=switch(target) { case "owner","student" -> "users"; case "subject" -> "subjects"; case "session" -> "exam_sessions"; case "exam" -> "student_exams"; default -> "student_exam_questions"; };
+                long id=switch(target) { case "owner","subject" -> 1L; case "student" -> 4L; case "session" -> parent; case "exam" -> exam;
+                    default -> jdbc.queryForObject("SELECT min(id) FROM aives.student_exam_questions WHERE student_exam_id=?",Long.class,exam); };
+                try (var connection=source.getConnection(); var statement=connection.prepareStatement("SELECT id FROM aives."+table+" WHERE id=? FOR UPDATE NOWAIT")) {
+                    statement.setLong(1,id);
+                    assertThatThrownBy(statement::executeQuery).isInstanceOfSatisfying(java.sql.SQLException.class,e -> assertThat(e.getSQLState()).isEqualTo("55P03"));
+                }
+            } finally { release.countDown(); }
+            held.get(10,TimeUnit.SECONDS);
+        }
+    }
+
     /** Poll không khóa parent hoặc UPDATE aggregate; chỉ nội suy remaining trên snapshot đọc. */
     @Test void pollingDoesNotBlockWorkerParentsOrRewriteProgress() throws Exception {
         open(); listen();
@@ -115,6 +247,40 @@ class OralExamPostgresIT {
         }
         command(OralExamAction.SUBMIT); assertThat(state.answerRemainingMs()).isEqualTo(78000L);
     }
+    /** Chuẩn bị TTS chỉ đọc, không chờ parent lock hoặc ghi lại hội thoại trước khi gọi provider. */
+    @Test void speechPlanDoesNotLockOrRewriteProgress() throws Exception {
+        open(); var request=new OralSpeechRequest(client,state.currentTurnId(),state.revision());
+        var before=progressVersions(); var locked=new CountDownLatch(1); var release=new CountDownLatch(1);
+        try (var pool=Executors.newSingleThreadExecutor()) {
+            var holder=pool.submit(() -> new TransactionTemplate(manager).executeWithoutResult(tx -> {
+                jdbc.queryForObject("SELECT id FROM aives.exam_sessions WHERE id=? FOR UPDATE",Long.class,parent); locked.countDown();
+                try { if (!release.await(10,TimeUnit.SECONDS)) throw new IllegalStateException("Fixture timeout"); } catch (InterruptedException stop) { Thread.currentThread().interrupt(); }
+            }));
+            try {
+                assertThat(locked.await(10,TimeUnit.SECONDS)).isTrue(); student(); var plan=service.speechPlan(exam,request);
+                assertThat(plan.turnId()).isEqualTo(state.currentTurnId()); assertThat(plan.text()).contains("PRIVATE_MAIN_PROMPT");
+                assertThat(progressVersions()).isEqualTo(before);
+            } finally { release.countDown(); holder.get(10,TimeUnit.SECONDS); }
+        }
+        service.confirmSpeech(exam,request,"en"); var spoken=progressVersions(); service.confirmSpeech(exam,request,"en");
+        assertThat(progressVersions()).isEqualTo(spoken);
+    }
+    /** Upload/claim chỉ ghi metadata job; chỉ callback đổi bước mới ghi aggregate. */
+    @Test void uploadAndWorkerClaimsDoNotRewriteConversation() {
+        open(); listen(); command(OralExamAction.SUBMIT); var job=state.submissionId(); var submitted=progressVersions();
+        attachFixture(job); assertThat(progressVersions()).isEqualTo(submitted);
+        var work=service.claimTranscription(exam,job); assertThat(work).isNotNull(); assertThat(progressVersions()).isEqualTo(submitted);
+        service.completeTranscription(work,"Câu trả lời",null); var transcribed=progressVersions();
+        assertThat(service.claimDecision(exam,job)).isNotNull(); assertThat(progressVersions()).isEqualTo(transcribed);
+    }
+    /** xmin PostgreSQL phát hiện UPDATE dù giá trị không đổi; chỉ quan sát bảng tiến trình, không phải claim job. */
+    private Map<String,List<String>> progressVersions() {
+        var result=new LinkedHashMap<String,List<String>>();
+        for (String table:List.of("oral_exam_progress","oral_question_progress","oral_exam_turns"))
+            result.put(table,jdbc.queryForList("SELECT xmin::text FROM aives."+table+" WHERE student_exam_id=? ORDER BY xmin::text",String.class,exam));
+        return result;
+    }
+
     /** Heartbeat riêng không dùng revision cũ, không tạo receipt/SUBMIT hoặc gia hạn slot. */
     @Test void dedicatedLeaseRenewsWithoutBusinessWritesAndRejectsOtherTab() throws Exception {
         open(); long revision=state.revision(); var deadline=state.deadline(); var turn=state.currentTurnId();
@@ -143,12 +309,13 @@ class OralExamPostgresIT {
         state=service.get(exam); assertThat(state.phase()).isEqualTo(OralExamPhase.EXPIRED);
     }
 
-    /** Service phát đúng tín hiệu STT → AI → audio của turn mới, không làm nóng toàn bộ đề. */
+    /** Pipeline chỉ chuẩn bị câu hiện tại và một câu chính tiếp theo; không làm nóng toàn bộ ngân hàng. */
     @Test void committedPipelinePublishesOnlyCurrentWorkAndPrompt() {
         open(); listen(); command(OralExamAction.SUBMIT); var job=state.submissionId(); attachFixture(job);
         var transcription=service.claimTranscription(exam,job); service.completeTranscription(transcription,"Câu trả lời đã lưu",null);
         var warm=events.stream(com.avies.backend.service.support.OralSpeechWarmup.class).toList();
-        assertThat(warm).hasSize(1); assertThat(warm.getFirst().plan().text()).isEqualTo("Question number 1. PRIVATE_MAIN_PROMPT");
+        assertThat(warm).hasSize(2); assertThat(warm.getFirst().plan().text()).isEqualTo("Question number 1. PRIVATE_MAIN_PROMPT");
+        assertThat(warm.getLast().plan().text()).isEqualTo("Question number 2. PRIVATE_MAIN_PROMPT");
         assertThat(warm.getFirst().deadline()).isEqualTo(state.deadline());
         var jobs=events.stream(com.avies.backend.service.support.OralWorkReady.class).toList();
         assertThat(jobs).hasSize(2); assertThat(jobs).allMatch(event -> event.examId()==exam && event.submissionId().equals(job));
@@ -156,8 +323,42 @@ class OralExamPostgresIT {
                 .containsExactly(com.avies.backend.service.support.OralWorkReady.Stage.STT,com.avies.backend.service.support.OralWorkReady.Stage.DECISION);
         var work=service.claimDecision(exam,job); service.completeDecision(work,com.avies.backend.service.support.OralDecisionResult.advance(),null);
         warm=events.stream(com.avies.backend.service.support.OralSpeechWarmup.class).toList();
-        assertThat(warm).hasSize(2); assertThat(warm.getLast().plan().text()).isEqualTo("Question number 2. PRIVATE_MAIN_PROMPT");
+        assertThat(warm).hasSize(3); assertThat(warm.getLast().plan().text()).isEqualTo("Question number 2. PRIVATE_MAIN_PROMPT");
         assertThat(warm.getLast().plan().turnId()).isNotEqualTo(warm.getFirst().plan().turnId());
+    }
+
+    /** Làm nóng câu kế không tạo turn trước, không đổi deadline, không tiêu follow-up và không phát lại event khi retry receipt. */
+    @Test void nextMainWarmupDoesNotOpenTurnOrResetTimers() {
+        jdbc.update("UPDATE aives.exam_sessions SET max_main_questions=3 WHERE id=?",parent); fixture.question();
+        open(); ready(); var deadline=state.deadline(); var turn=state.currentTurnId();
+        var request=request(OralExamAction.PROMPT_FINISHED,null); state=service.execute(exam,request);
+        var warm=events.stream(com.avies.backend.service.support.OralSpeechWarmup.class).toList();
+        assertThat(warm).hasSize(2); assertThat(warm.getLast().plan().text()).startsWith("Question number 2.");
+        assertThat(warm).noneMatch(event -> event.plan().text().startsWith("Question number 3."));
+        var revision=state.revision(); state=service.execute(exam,request);
+        assertThat(events.stream(com.avies.backend.service.support.OralSpeechWarmup.class).count()).isEqualTo(2);
+        assertThat(state.deadline()).isEqualTo(deadline); assertThat(state.currentTurnId()).isEqualTo(turn); assertThat(state.revision()).isEqualTo(revision);
+        assertThat(state.phase()).isEqualTo(OralExamPhase.ANSWERING); assertThat(state.followUpsUsed()).isZero(); assertThat(count("oral_exam_turns")).isEqualTo(1);
+    }
+
+    /** Lỗi STT ở câu cuối giữ câu 1/2/follow-up và dùng lại đúng audio để hoàn thành sau RETRY. */
+    @Test void thirdQuestionTranscriptionFailureRetriesWithoutLosingEarlierAnswers() {
+        jdbc.update("UPDATE aives.exam_sessions SET max_main_questions=3,max_follow_ups=2 WHERE id=?",parent); fixture.question();
+        open(); listen(); answer(false); listen(); answer(true); listen(); answer(false); listen();
+        assertThat(state.currentQuestionOrder()).isEqualTo(3); assertThat(state.transcripts()).hasSize(3);
+        command(OralExamAction.SUBMIT); var job=state.submissionId(); var turn=state.currentTurnId(); attachFixture(job);
+        var work=service.claimTranscription(exam,job); service.completeTranscription(work,null,1811); student(); state=service.get(exam);
+        assertThat(state.phase()).isEqualTo(OralExamPhase.TECHNICAL_ERROR); assertThat(state.processingErrorCode()).isEqualTo(1811);
+        assertThat(state.audioReceived()).isTrue(); assertThat(state.currentQuestionOrder()).isEqualTo(3);
+        assertThat(state.questions().subList(0,2)).allMatch(q -> q.status()==OralQuestionStatus.ANSWERED);
+        var previous=state.transcripts(); var deadline=state.deadline(); var remaining=state.answerRemainingMs();
+        command(OralExamAction.RETRY); var retried=service.claimTranscription(exam,job);
+        assertThat(retried.submissionId()).isEqualTo(work.submissionId()); assertThat(retried.sha256()).isEqualTo(work.sha256());
+        assertThat(state.currentTurnId()).isEqualTo(turn); assertThat(state.answerRemainingMs()).isEqualTo(remaining); assertThat(state.deadline()).isEqualTo(deadline);
+        service.completeTranscription(retried,"Câu trả lời thứ ba đã nhận dạng lại",null);
+        var decision=service.claimDecision(exam,job); service.completeDecision(decision,com.avies.backend.service.support.OralDecisionResult.advance(),null);
+        student(); state=service.get(exam); assertThat(state.phase()).isEqualTo(OralExamPhase.COMPLETED);
+        assertThat(state.transcripts()).hasSize(4).containsAll(previous); assertThat(state.followUpsUsed()).isEqualTo(1);
     }
 
     /** STT không được treo mười phút; timeout kỹ thuật vô hiệu claim cũ và giữ nguyên audio để retry. */
@@ -182,17 +383,52 @@ class OralExamPostgresIT {
     }
 
     /** Context chỉ đọc snapshot cùng transcript đã commit; nonce lặp/khác không đổi bằng chứng. */
-    @Test void decisionContextAndCommitAreSnapshotBasedAndIdempotent() {
+    @Test void decisionContextAndCommitAreSnapshotBasedAndIdempotent() throws Exception {
         var job=transcribedFixture(); jdbc.update("UPDATE aives.questions SET content='CHANGED_BANK',reference_answer='PRIVATE_NEW_ANSWER'");
+        jdbc.update("UPDATE aives.rubrics SET title='CHANGED_RUBRIC',description='CHANGED_DESCRIPTION'");
+        jdbc.update("UPDATE aives.rubric_criteria SET criterion_text='CHANGED_CRITERION'");
         var work=service.claimDecision(exam,job); assertThat(work.mainPrompt()).isEqualTo("PRIVATE_MAIN_PROMPT");
+        assertThat(work.assessment().referenceAnswer()).isEqualTo("PRIVATE_REFERENCE_ANSWER");
+        assertThat(work.assessment().rubricTitle()).isEqualTo("PRIVATE_RUBRIC");
+        assertThat(work.assessment().rubricDescription()).isEqualTo("Description");
+        assertThat(work.assessment().criteria()).containsExactly("Criterion A","Criterion B");
         assertThat(work.history().getFirst().answer()).isEqualTo("Câu trả lời STT thật fixture"); assertThat(service.claimDecision(exam,job)).isNull();
-        var wrong=new com.avies.backend.service.support.OralDecisionWork(exam,job,UUID.randomUUID(),work.language(),work.mainPrompt(),work.history(),true);
+        var wrong=new com.avies.backend.service.support.OralDecisionWork(exam,job,UUID.randomUUID(),work.language(),work.mainPrompt(),work.history(),true,work.assessment());
         service.completeDecision(wrong,com.avies.backend.service.support.OralDecisionResult.advance(),null);
         student(); state=service.get(exam); assertThat(state.phase()).isEqualTo(OralExamPhase.DECIDING);
         service.completeDecision(work,new com.avies.backend.service.support.OralDecisionResult(true,"Bạn có thể giải thích rõ lập luận vừa nêu không?"),null);
         service.completeDecision(work,com.avies.backend.service.support.OralDecisionResult.advance(),null);
         student(); state=service.get(exam); assertThat(state.phase()).isEqualTo(OralExamPhase.PREPARING); assertThat(state.followUpsUsed()).isEqualTo(1);
         assertThat(count("oral_exam_turns")).isEqualTo(2); assertThat(answerCount()).isEqualTo(1); assertThat(decisionRepository.candidates()).isEmpty();
+        mvc.perform(as(get(url()),"student")).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("PRIVATE_REFERENCE_ANSWER"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("PRIVATE_RUBRIC"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Criterion A"))))
+                .andExpect(jsonPath("$.result.privateAssessment").doesNotExist());
+        student(); var speech=service.speechPlan(exam,new OralSpeechRequest(client,state.currentTurnId(),state.revision()));
+        assertThat(speech.text()).isEqualTo("Câu số 1, câu hỏi đào sâu 1. Bạn có thể giải thích rõ lập luận vừa nêu không?");
+    }
+
+    /** Đáp án chỉ thuộc câu hiện tại; không gửi đáp án của toàn bộ đề vào context. */
+    @Test void decisionAssessmentContainsOnlyCurrentQuestionsSnapshotAnswer() {
+        jdbc.update("UPDATE aives.questions SET reference_answer='PRIVATE_REFERENCE_' || id");
+        var job=transcribedFixture(); var work=service.claimDecision(exam,job);
+        String expected=jdbc.queryForObject("""
+                SELECT q.snapshot_reference_answer FROM aives.student_exam_questions q
+                JOIN aives.oral_exam_turns t ON t.student_exam_question_id=q.id WHERE t.id=?
+                """,String.class,state.currentTurnId());
+        assertThat(work.assessment().referenceAnswer()).isEqualTo(expected);
+        assertThat(work.history()).hasSize(1);
+    }
+
+    /** Null đáp án là snapshot hợp lệ; không lấy bù đáp án mới từ bank hoặc làm hỏng luồng quyết định. */
+    @Test void decisionAssessmentPreservesAbsentReferenceInsteadOfFallingBackToLiveBank() {
+        jdbc.update("UPDATE aives.questions SET reference_answer=NULL");
+        var job=transcribedFixture(); jdbc.update("UPDATE aives.questions SET reference_answer='NEW_LIVE_ANSWER'");
+        var work=service.claimDecision(exam,job);
+        assertThat(work.assessment().referenceAnswer()).isNull(); assertThat(work.assessment().criteria()).hasSize(2);
+        service.completeDecision(work,com.avies.backend.service.support.OralDecisionResult.advance(),null);
+        student(); assertThat(service.get(exam).currentQuestionOrder()).isEqualTo(2);
     }
     /** RETRY AI dùng lại transcript/job, không gọi STT hoặc cấp thêm ngân sách câu. */
     @Test void failedDecisionRetriesSameTranscriptWithoutAnotherAnswer() {
@@ -224,6 +460,7 @@ class OralExamPostgresIT {
         service.completeDecision(work,new com.avies.backend.service.support.OralDecisionResult(true,"Vì sao bạn chọn cách lập luận đó?"),null);
         student(); state=service.get(exam); listen(); command(OralExamAction.SUBMIT); var second=state.submissionId(); providerTranscript(second,"Em giải thích thêm bằng lời.");
         var next=service.claimDecision(exam,second); assertThat(next.canFollowUp()).isFalse();
+        assertThat(next.assessment()).isEqualTo(com.avies.backend.service.support.OralDecisionWork.Assessment.empty());
         service.completeDecision(next,new com.avies.backend.service.support.OralDecisionResult(true,"Câu hỏi vượt quota?"),null);
         student(); state=service.get(exam); assertThat(state.followUpsUsed()).isEqualTo(1); assertThat(state.currentQuestionOrder()).isEqualTo(2); assertThat(count("oral_exam_turns")).isEqualTo(3);
     }
@@ -436,6 +673,8 @@ class OralExamPostgresIT {
 
     /** Hết slot trong lúc TTS xử lý thì không được trả audio hoặc mở giờ trả lời mới. */
     @Test void speechRechecksDeadlineAfterProviderReturns() throws Exception {
+        // Buộc cache miss để test thực sự đi qua provider chậm, không dùng WAV từ test khác.
+        jdbc.update("UPDATE aives.questions SET content='PRIVATE_DEADLINE_PROMPT'");
         when(speechSettings.ready()).thenReturn(true); open();
         when(speechProvider.synthesize(anyString(), anyString())).thenAnswer(call -> {
             at(fixture.base.start.plusMinutes(21)); return com.avies.backend.service.impl.GeminiOralSpeechProviderTest.wav();

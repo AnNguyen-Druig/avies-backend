@@ -152,7 +152,7 @@ class ExamQuestionSelectionConcurrencyPostgresIT {
             Object result = invocation.callRealMethod();
             chosen.countDown(); await(release);
             return result;
-        }).when(selector).choose(anyList(), anyList(), anyInt());
+        }).when(selector).choose(anyList(), anyList(), anyList(), anyInt());
         try (var workers = Executors.newFixedThreadPool(1)) {
             Future<ErrorCode> pending = workers.submit(() -> {
                 try { select(exam); return null; }

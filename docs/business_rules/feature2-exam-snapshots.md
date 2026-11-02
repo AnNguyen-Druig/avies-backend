@@ -35,9 +35,17 @@ Không có FK tới rubric/tiêu chí nguồn trong payload: sửa hoặc xóa n
 3. Nếu đã có bộ câu: kiểm tra đủ số lượng/thứ tự/distinct và snapshot; trả nguyên ID, không random và không đọc lại rubric hiện hành.
 4. Nếu phiên chưa chốt rubric nhưng đã có câu lịch sử hoặc lượt thi có bằng chứng sử dụng: trả 409/1506. Không tự dựng lại rubric quá khứ.
 5. Với phiên mới: khóa rubric của môn FOR UPDATE NOWAIT rồi criteria FOR SHARE NOWAIT; đọc scalar mới và chốt đầy đủ rubric. Chỉ một rubric, không kỳ vọng một rubric cho mỗi câu.
-6. Chọn đúng N câu APPROVED, chưa archive, đúng môn, Bloom/nội dung/version hợp lệ. Thuật toán chống lặp/Bloom giữ nguyên. Rubric đã chốt được áp dụng cho mọi sinh viên, kể cả sau khi nguồn bị sửa/xóa.
+6. Chọn đúng N câu APPROVED, chưa archive, đúng môn, Bloom/nội dung/version hợp lệ. Rubric đã chốt được áp dụng cho mọi sinh viên, kể cả sau khi nguồn bị sửa/xóa.
 7. Khóa câu theo ID tăng dần FOR SHARE NOWAIT, đọc lại scalar và so fingerprint, gồm cả đáp án và giới hạn trả lời. Không lấy entity cache cũ để snapshot.
 8. Ghi đúng N liên kết kèm snapshot. Rubric và câu cùng transaction caller; lỗi bất kỳ làm rollback toàn bộ.
+
+Chính sách chọn câu cập nhật 02/11/2026:
+
+- Ưu tiên tránh bộ của sinh viên thi ngay trước trong cùng phiên, sau đó tránh bộ gần nhất của chính sinh viên ở phiên khác cùng môn và ưu tiên câu sinh viên chưa gặp.
+- Tiếp theo xét mức sử dụng/gần nhất trong phiên, tần suất cá nhân và đa dạng Bloom; các ứng viên ngang ưu tiên được chọn ngẫu nhiên bằng `SecureRandom`.
+- Lịch sử cá nhân chỉ lấy đúng sinh viên và môn học. Ngân hàng nhỏ vẫn chọn đủ N câu distinct trong một bài; không bắt buộc số câu bằng số sinh viên nhân N và không bảo đảm mọi bài luôn khác nhau.
+- Chỉ áp dụng khi Start tạo bộ mới. Mở lại/retry bài đã có snapshot luôn giữ nguyên câu và thứ tự đã chốt. Không cần migration hoặc thay API/FE.
+- Log `exam-selection` ghi số câu đủ điều kiện và ID đã chọn để kiểm tra trường hợp bank có nhiều câu APPROVED nhưng ít câu thật sự hợp lệ; không ghi nội dung đề/đáp án.
 
 Khi rubric đã chốt, không đổi môn, maxMainQuestions hoặc maxFollowUps. PATCH gửi lại đúng giá trị vẫn hợp lệ nếu các điều kiện CRUD khác đáp ứng. Sửa tiêu đề không thay snapshot.
 Lịch và slot vẫn theo quy tắc CRUD/phân công đã có. Không nới quyền, không thay trạng thái hoặc tự khởi động bài thi.

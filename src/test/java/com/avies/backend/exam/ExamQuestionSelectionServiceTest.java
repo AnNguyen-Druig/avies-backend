@@ -44,7 +44,7 @@ class ExamQuestionSelectionServiceTest {
                 new ExamQuestionEligibility(), new ExamQuestionSelector(new Random(17)), snapshots);
         ReflectionTestUtils.setField(service, "entityManager", em);
         parent = ExamSession.builder().id(7L).subject(Subject.builder().id(1L).build()).maxMainQuestions(2).build();
-        exam = StudentExam.builder().id(8L).session(parent).build();
+        exam = StudentExam.builder().id(8L).session(parent).student(User.builder().id(4L).build()).build();
     }
 
     /** StudentExam chưa tồn tại không đọc pool hoặc ghi dữ liệu. */

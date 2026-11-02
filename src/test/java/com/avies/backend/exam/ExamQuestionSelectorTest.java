@@ -104,6 +104,57 @@ class ExamQuestionSelectorTest {
         assertThat(outputs.size()).isGreaterThan(1);
     }
 
+    /** Cùng Student sang phiên mới không bị coi là chưa từng gặp bộ câu của phiên trước. */
+    @Test void avoidsPersonalPreviousSetAcrossSessions() {
+        var history=List.of(use(1,1,time,1),use(2,1,time,2),use(3,1,time,3));
+        assertThat(selector().choose(pool(8),List.of(),history,3)).extracting(ExamQuestionEligibility.Candidate::id)
+                .doesNotContain(1L,2L,3L).hasSize(3);
+    }
+    /** Không ép lấy lại ba Bloom hiếm của bài cũ nếu còn ba câu Student chưa gặp. */
+    @Test void unseenQuestionsBeatRepeatingRareBloomLevels() {
+        var pool=List.of(candidate(1,BloomLevel.REMEMBER),candidate(2,BloomLevel.ANALYZE),candidate(3,BloomLevel.APPLY),
+                candidate(4,BloomLevel.UNDERSTAND),candidate(5,BloomLevel.UNDERSTAND),candidate(6,BloomLevel.UNDERSTAND));
+        var history=List.of(use(1,1,time,1),use(2,1,time,2),use(3,1,time,3));
+        assertThat(selector().choose(pool,List.of(),history,3)).extracting(ExamQuestionEligibility.Candidate::id)
+                .containsExactlyInAnyOrder(4L,5L,6L);
+    }
+    /** Khi đủ 12 câu, bốn lượt cùng Student mỗi lượt ba câu ưu tiên hết các câu chưa gặp. */
+    @Test void fourSessionsUseUnseenQuestionsWhileBankPermits() {
+        var history=new ArrayList<ExamQuestionSelector.Use>(); var seen=new HashSet<Long>(); var selector=selector();
+        for (int exam=1;exam<=4;exam++) {
+            var chosen=selector.choose(pool(12),List.of(),history,3);
+            assertThat(chosen).allMatch(q -> !seen.contains(q.id()));
+            for (var q:chosen) { seen.add(q.id()); history.add(use(q.id(),exam,time.plusMinutes(exam*20L),history.size()+1)); }
+        }
+        assertThat(seen).hasSize(12);
+    }
+    /** Ngân hàng nhỏ vẫn đủ N distinct; tận dụng câu ngoài bộ gần nhất thay vì lặp nguyên bộ. */
+    @Test void smallBankRotatesWithoutRequiringStudentCountTimesMainCount() {
+        var history=List.of(use(1,1,time,1),use(2,1,time,2),use(3,1,time,3));
+        var result=selector().choose(pool(4),List.of(),history,3);
+        assertThat(result).hasSize(3).extracting(ExamQuestionEligibility.Candidate::id).contains(4L).doesNotHaveDuplicates();
+        assertThat(selector().choose(pool(3),List.of(),history,3)).extracting(ExamQuestionEligibility.Candidate::id)
+                .containsExactlyInAnyOrder(1L,2L,3L);
+    }
+    /** Ưu tiên tránh Student ngay trước trong phiên vẫn thắng lịch sử cá nhân ở phiên khác. */
+    @Test void sessionPreviousRuleStillTakesPrecedence() {
+        var session=List.of(use(1,10,time,1),use(2,10,time,2),use(3,10,time,3));
+        var personal=List.of(use(4,1,time,4),use(5,1,time,5),use(6,1,time,6));
+        assertThat(selector().choose(pool(6),session,personal,3)).extracting(ExamQuestionEligibility.Candidate::id)
+                .containsExactlyInAnyOrder(4L,5L,6L);
+    }
+    /** Sau khi mọi câu từng dùng, các câu cùng ưu tiên vẫn có nhiều bộ khác nhau qua nguồn random. */
+    @Test void usedBankDoesNotForceOneOldQuestionSet() {
+        var history=new ArrayList<ExamQuestionSelector.Use>();
+        for (int q=1;q<=9;q++) history.add(use(q,(q-1)/3+1,time.plusMinutes(((q-1)/3)*20L),q));
+        var sets=new HashSet<Set<Long>>();
+        for (int seed=0;seed<20;seed++) {
+            var chosen=new ExamQuestionSelector(new Random(seed)).choose(pool(9),List.of(),history,3);
+            sets.add(new HashSet<>(chosen.stream().map(ExamQuestionEligibility.Candidate::id).toList()));
+        }
+        assertThat(sets.size()).isGreaterThan(1);
+    }
+
     /** Không có đường trả bộ nhỏ hơn N hoặc cùng câu hai lần. */
     @Test
     void rejectsInvalidPoolInsteadOfSilentlyReturningFewerQuestions() {

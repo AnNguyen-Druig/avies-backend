@@ -8,7 +8,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.time.Clock;
 import java.util.concurrent.RejectedExecutionException;
 
-/** Chỉ làm nóng câu vừa chốt sau commit; thất bại không thay đổi tiến trình bài thi. */
+/** Làm nóng audio snapshot sau commit; không tạo turn sớm, thất bại không thay đổi tiến trình bài thi. */
 @Component
 @lombok.extern.slf4j.Slf4j
 public class OralSpeechWarmupWorker {

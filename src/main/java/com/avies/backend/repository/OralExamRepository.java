@@ -3,18 +3,26 @@ package com.avies.backend.repository;
 import com.avies.backend.entity.OralExamProgress;
 import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
-import org.springframework.jdbc.core.BeanPropertyRowMapper;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import javax.sql.DataSource;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.PropertyNamingStrategies;
+import tools.jackson.databind.json.JsonMapper;
 
 /** Lưu aggregate hội thoại bằng JDBC, tham gia cùng transaction/khóa parent với Feature 2. */
 @Repository
 public class OralExamRepository {
     /** Không đọc .env hoặc mở datasource ngoài Spring. */ private final JdbcTemplate jdbc;
+    /** Chỉ hợp đồng nội bộ DB snake_case; không dùng mapper HTTP hoặc log JSON hội thoại. */
+    private final JsonMapper json=JsonMapper.builder().propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
+    /** Chỉ cache kiểm tra schema thành công; thiếu migration vẫn được kiểm tra lại sau khi triển khai. */
+    private volatile boolean schemaReady;
 
     /** Dùng datasource ứng dụng, hoặc datasource cô lập do context test cung cấp. */
     public OralExamRepository(DataSource source) { jdbc = new JdbcTemplate(source); }
@@ -29,25 +37,41 @@ public class OralExamRepository {
 
     /** Chỉ đường ghi mới dùng NOWAIT; poll không chặn STT/AI callback hoặc heartbeat. */
     private Optional<OralExamProgress> find(long examId, boolean lock) {
-        if (!Boolean.TRUE.equals(jdbc.queryForObject("""
+        if (!schemaReady) {
+            if (!Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT to_regclass('aives.oral_exam_progress') IS NOT NULL
                    AND to_regclass('aives.oral_question_progress') IS NOT NULL
                    AND to_regclass('aives.oral_exam_turns') IS NOT NULL
                    AND to_regclass('aives.oral_answer_submissions') IS NOT NULL
                    AND to_regclass('aives.oral_exam_commands') IS NOT NULL
                 """, Boolean.class))) throw new AppException(ErrorCode.ORAL_SCHEMA_NOT_READY);
+            schemaReady=true;
+        }
         String suffix=lock ? " FOR UPDATE NOWAIT" : "";
-        var rows = jdbc.query("SELECT * FROM aives.oral_exam_progress WHERE student_exam_id=?"+suffix,
-                BeanPropertyRowMapper.newInstance(OralExamProgress.class), examId);
-        if (rows.isEmpty()) return Optional.empty();
-        var progress = rows.getFirst();
-        progress.setQuestions(jdbc.query("SELECT * FROM aives.oral_question_progress WHERE student_exam_id=? ORDER BY question_order"+suffix,
-                BeanPropertyRowMapper.newInstance(OralExamProgress.Question.class), examId));
-        progress.setTurns(jdbc.query("SELECT * FROM aives.oral_exam_turns WHERE student_exam_id=? ORDER BY created_at,id"+suffix,
-                BeanPropertyRowMapper.newInstance(OralExamProgress.Turn.class), examId));
-        progress.setSubmissions(jdbc.query("SELECT * FROM aives.oral_answer_submissions WHERE student_exam_id=? ORDER BY updated_at,id"+suffix,
-                BeanPropertyRowMapper.newInstance(OralExamProgress.Submission.class), examId));
-        return Optional.of(progress);
+        // CTE phụ thuộc parent rồi câu → turn → submission; giữ NOWAIT, gom bốn lượt đọc thành một chuyến DB.
+        try {
+            var rows=jdbc.query("""
+                WITH p AS MATERIALIZED (SELECT * FROM aives.oral_exam_progress WHERE student_exam_id=?%s),
+                q AS MATERIALIZED (SELECT q.* FROM aives.oral_question_progress q,p WHERE q.student_exam_id=p.student_exam_id ORDER BY q.question_order%s),
+                t AS MATERIALIZED (SELECT t.* FROM aives.oral_exam_turns t,p WHERE t.student_exam_id=p.student_exam_id
+                    AND (SELECT count(*) FROM q)>=0 ORDER BY t.created_at,t.id%s),
+                s AS MATERIALIZED (SELECT s.* FROM aives.oral_answer_submissions s,p WHERE s.student_exam_id=p.student_exam_id
+                    AND (SELECT count(*) FROM t)>=0 ORDER BY s.updated_at,s.id%s)
+                SELECT to_jsonb(p) || jsonb_build_object(
+                    'questions',COALESCE((SELECT jsonb_agg(to_jsonb(q) ORDER BY q.question_order) FROM q),'[]'::jsonb),
+                    'turns',COALESCE((SELECT jsonb_agg(to_jsonb(t) ORDER BY t.created_at,t.id) FROM t),'[]'::jsonb),
+                    'submissions',COALESCE((SELECT jsonb_agg(to_jsonb(s) ORDER BY s.updated_at,s.id) FROM s),'[]'::jsonb)) AS payload FROM p
+                """.formatted(suffix,lock ? " FOR UPDATE OF q NOWAIT" : "",lock ? " FOR UPDATE OF t NOWAIT" : "",lock ? " FOR UPDATE OF s NOWAIT" : ""),
+                (row,index) -> json.readValue(row.getString("payload"),OralExamProgress.class),examId);
+            if (rows.isEmpty()) return Optional.empty();
+            return Optional.of(rows.getFirst());
+        } catch (BadSqlGrammarException failure) {
+            if ("42P01".equals(failure.getSQLException().getSQLState())) {
+                schemaReady=false;
+                throw new AppException(ErrorCode.ORAL_SCHEMA_NOT_READY);
+            }
+            throw failure;
+        }
     }
 
     /** Một UPDATE đúng client; không phụ thuộc revision/turn vốn thay đổi khi worker chuyển bước. */
@@ -81,22 +105,25 @@ public class OralExamRepository {
 
     /** Ghi phần tiến trình dưới parent lock; không sửa snapshot hoặc ngân sách gốc. */
     public void save(OralExamProgress p) {
-        jdbc.update("""
-                UPDATE aives.oral_exam_progress SET phase=?,recovery_phase=?,current_question_order=?,current_turn_id=?,
-                    follow_ups_used=?,answer_opened_at=?,client_session_id=?,lease_until=?,revision=?,updated_at=? WHERE student_exam_id=?
-                """, p.getPhase().name(), name(p.getRecoveryPhase()), p.getCurrentQuestionOrder(), p.getCurrentTurnId(),
-                p.getFollowUpsUsed(), p.getAnswerOpenedAt(), p.getClientSessionId(), p.getLeaseUntil(), p.getRevision(), p.getUpdatedAt(), p.getStudentExamId());
-        for (var q : p.getQuestions()) jdbc.update("""
-                UPDATE aives.oral_question_progress SET status=?,answer_used_ms=?,outcome_reason=?
-                WHERE student_exam_question_id=? AND student_exam_id=?
-                """, q.getStatus().name(), q.getAnswerUsedMs(), q.getOutcomeReason(), q.getStudentExamQuestionId(), p.getStudentExamId());
-        for (var t : p.getTurns()) jdbc.update("""
-                UPDATE aives.oral_exam_turns SET language=?,prompt_ready=?,answer_status=?,answer_text=?,answered_at=? WHERE id=? AND student_exam_id=?
-                """, t.getLanguage(), t.getPromptReady(), t.getAnswerStatus(), t.getAnswerText(), t.getAnsweredAt(), t.getId(), p.getStudentExamId());
-        for (var s : p.getSubmissions()) jdbc.update("""
-                UPDATE aives.oral_answer_submissions SET status=?,transcript_text=?,decision_kind=?,decision_text=?,updated_at=?
-                WHERE id=? AND student_exam_id=?
-                """, s.getStatus(), s.getTranscriptText(), s.getDecisionKind(), s.getDecisionText(), s.getUpdatedAt(), s.getId(), p.getStudentExamId());
+        // Một statement nguyên tử, chỉ UPDATE đúng các cột trước đây; không ghi đè claim/audio/snapshot.
+        jdbc.queryForObject("""
+                WITH input AS (SELECT CAST(? AS jsonb) AS data),
+                p AS (UPDATE aives.oral_exam_progress p SET phase=v.phase,recovery_phase=v.recovery_phase,
+                    current_question_order=v.current_question_order,current_turn_id=v.current_turn_id,follow_ups_used=v.follow_ups_used,
+                    answer_opened_at=v.answer_opened_at,client_session_id=v.client_session_id,lease_until=v.lease_until,revision=v.revision,updated_at=v.updated_at
+                    FROM input i,LATERAL jsonb_populate_record(NULL::aives.oral_exam_progress,i.data) v
+                    WHERE p.student_exam_id=v.student_exam_id RETURNING p.student_exam_id),
+                q AS (UPDATE aives.oral_question_progress q SET status=v.status,answer_used_ms=v.answer_used_ms,outcome_reason=v.outcome_reason
+                    FROM input i,LATERAL jsonb_populate_recordset(NULL::aives.oral_question_progress,i.data->'questions') v
+                    WHERE q.student_exam_question_id=v.student_exam_question_id AND q.student_exam_id=(i.data->>'student_exam_id')::bigint RETURNING q.student_exam_question_id),
+                t AS (UPDATE aives.oral_exam_turns t SET language=v.language,prompt_ready=v.prompt_ready,answer_status=v.answer_status,answer_text=v.answer_text,answered_at=v.answered_at
+                    FROM input i,LATERAL jsonb_populate_recordset(NULL::aives.oral_exam_turns,i.data->'turns') v
+                    WHERE t.id=v.id AND t.student_exam_id=(i.data->>'student_exam_id')::bigint RETURNING t.id),
+                s AS (UPDATE aives.oral_answer_submissions s SET status=v.status,transcript_text=v.transcript_text,decision_kind=v.decision_kind,decision_text=v.decision_text,updated_at=v.updated_at
+                    FROM input i,LATERAL jsonb_populate_recordset(NULL::aives.oral_answer_submissions,i.data->'submissions') v
+                    WHERE s.id=v.id AND s.student_exam_id=(i.data->>'student_exam_id')::bigint RETURNING s.id)
+                SELECT (SELECT count(*) FROM p)+(SELECT count(*) FROM q)+(SELECT count(*) FROM t)+(SELECT count(*) FROM s)
+                """,Long.class,json.writeValueAsString(p));
     }
 
     /** Tạo lượt hỏi một lần và lưu lời AI vào transcripts với thứ tự do BE cấp. */

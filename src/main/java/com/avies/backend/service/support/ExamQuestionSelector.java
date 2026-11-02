@@ -9,7 +9,7 @@ import java.util.*;
 import java.util.random.RandomGenerator;
 
 /**
- * Thuật toán thuần: tránh sinh viên trước, ưu tiên câu chưa dùng/cũ hơn, cân Bloom khi ngang ưu tiên.
+ * Tránh sinh viên trước trong phiên và câu Student đã gặp ở môn này; random khi ngang ưu tiên.
  */
 @Component
 public class ExamQuestionSelector {
@@ -36,7 +36,7 @@ public class ExamQuestionSelector {
      * Lần dùng của một câu; selectionId là fallback thứ tự nếu chưa có bài nào bắt đầu thực tế.
      */
     public record Use(
-            /** Bài thi khác trong cùng phiên. */Long studentExamId,
+            /** Lượt thi thuộc phạm vi lịch sử do service chọn. */Long studentExamId,
             /** Câu đã dùng. */Long questionId,
             /** Giờ bắt đầu thực tế có thể chưa có. */OffsetDateTime startedAt,
             /** Giờ hoàn tất dùng khi thiếu startedAt legacy. */OffsetDateTime completedAt,
@@ -48,17 +48,20 @@ public class ExamQuestionSelector {
      */
     private record Priority(
             /** Tránh bài gần nhất. */int previous,
+            /** Tránh bộ gần nhất của chính Student qua các phiên. */int personalPrevious,
+            /** Ưu tiên câu Student chưa gặp trong môn học. */int personalUsed,
             /** Chưa từng dùng được ưu tiên. */int used,
             /** Câu dùng xa hơn được ưu tiên. */int recency,
             /** Ít lần xuất hiện hơn được ưu tiên khi cùng độ gần. */int count,
+            /** Cân số lần Student gặp câu khi đã dùng hết ngân hàng. */int personalCount,
             /** Bloom ít có trong bộ đang xây được ưu tiên cuối. */int bloomCount) implements Comparable<Priority> {
         /**
          * So từ ưu tiên chống lặp tới Bloom, không cộng trọng số làm mất thứ tự chính sách.
          */
         @Override
         public int compareTo(Priority other) {
-            int[] a = {previous, used, recency, count, bloomCount};
-            int[] b = {other.previous, other.used, other.recency, other.count, other.bloomCount};
+            int[] a = {previous, personalPrevious, personalUsed, used, recency, count, personalCount, bloomCount};
+            int[] b = {other.previous, other.personalPrevious, other.personalUsed, other.used, other.recency, other.count, other.personalCount, other.bloomCount};
             for (int i = 0; i < a.length; i++) {
                 int comparison = Integer.compare(a[i], b[i]);
                 if (comparison != 0) return comparison;
@@ -71,8 +74,41 @@ public class ExamQuestionSelector {
      * Chọn đúng N distinct khi caller đã xác nhận đủ pool; không tạo câu AI hoặc lặp trong một bài.
      */
     public List<ExamQuestionEligibility.Candidate> choose(List<ExamQuestionEligibility.Candidate> pool, List<Use> history, int count) {
+        return choose(pool,history,List.of(),count);
+    }
+
+    /** Lịch sử phiên và lịch sử Student tách riêng, không cấm trùng tuyệt đối khi ngân hàng nhỏ. */
+    public List<ExamQuestionEligibility.Candidate> choose(List<ExamQuestionEligibility.Candidate> pool, List<Use> history, List<Use> studentHistory, int count) {
         if (count < 1 || pool.size() < count || pool.stream().map(ExamQuestionEligibility.Candidate::id).distinct().count() != pool.size())
             throw new IllegalArgumentException("Pool hoặc số câu không hợp lệ.");
+        var session=rank(history); var personal=rank(studentHistory);
+        List<ExamQuestionEligibility.Candidate> remaining = new ArrayList<>(pool);
+        remaining.sort(Comparator.comparing(ExamQuestionEligibility.Candidate::id));
+        Map<BloomLevel, Integer> blooms = new EnumMap<>(BloomLevel.class);
+        List<ExamQuestionEligibility.Candidate> result = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            Priority best = null;
+            List<ExamQuestionEligibility.Candidate> ties = new ArrayList<>();
+            for (var candidate : remaining) {
+                var priority = new Priority(session.previous().contains(candidate.id()) ? 1 : 0,
+                        personal.previous().contains(candidate.id()) ? 1 : 0, personal.uses().containsKey(candidate.id()) ? 1 : 0,
+                        session.uses().containsKey(candidate.id()) ? 1 : 0, session.lastRank().getOrDefault(candidate.id(), 0),
+                        session.uses().getOrDefault(candidate.id(), 0),personal.uses().getOrDefault(candidate.id(),0), blooms.getOrDefault(candidate.bloom(), 0));
+                int comparison = best == null ? -1 : priority.compareTo(best);
+                if (comparison < 0) { best = priority; ties.clear(); }
+                if (comparison <= 0) ties.add(candidate);
+            }
+            var selected = ties.get(random.nextInt(ties.size()));
+            remaining.remove(selected); blooms.merge(selected.bloom(), 1, Integer::sum); result.add(selected);
+        }
+        return List.copyOf(result);
+    }
+
+    /** Các thông tin chống lặp chỉ thuộc lần chọn hiện tại, không cache theo Student/phiên. */
+    private record History(Set<Long> previous, Map<Long,Integer> lastRank, Map<Long,Integer> uses) { }
+
+    /** Xác định lượt gần nhất bằng thời điểm thi, dùng ID liên kết nếu dữ liệu legacy thiếu thời điểm. */
+    private History rank(List<Use> history) {
         Map<Long, List<Use>> exams = new HashMap<>();
         history.forEach(use -> exams.computeIfAbsent(use.studentExamId(), ignored -> new ArrayList<>()).add(use));
         List<Long> ordered = new ArrayList<>(exams.keySet());
@@ -90,30 +126,7 @@ public class ExamQuestionSelector {
                 if (Objects.equals(previous, use.studentExamId())) previousQuestions.add(use.questionId());
             }
         }
-        List<ExamQuestionEligibility.Candidate> remaining = new ArrayList<>(pool);
-        remaining.sort(Comparator.comparing(ExamQuestionEligibility.Candidate::id));
-        Map<BloomLevel, Integer> blooms = new EnumMap<>(BloomLevel.class);
-        List<ExamQuestionEligibility.Candidate> result = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            Priority best = null;
-            List<ExamQuestionEligibility.Candidate> ties = new ArrayList<>();
-            for (var candidate : remaining) {
-                var priority = new Priority(previousQuestions.contains(candidate.id()) ? 1 : 0,
-                        uses.containsKey(candidate.id()) ? 1 : 0, lastRank.getOrDefault(candidate.id(), 0),
-                        uses.getOrDefault(candidate.id(), 0), blooms.getOrDefault(candidate.bloom(), 0));
-                int comparison = best == null ? -1 : priority.compareTo(best);
-                if (comparison < 0) {
-                    best = priority;
-                    ties.clear();
-                }
-                if (comparison <= 0) ties.add(candidate);
-            }
-            var selected = ties.get(random.nextInt(ties.size()));
-            remaining.remove(selected);
-            blooms.merge(selected.bloom(), 1, Integer::sum);
-            result.add(selected);
-        }
-        return List.copyOf(result);
+        return new History(previousQuestions,lastRank,uses);
     }
 
     /**

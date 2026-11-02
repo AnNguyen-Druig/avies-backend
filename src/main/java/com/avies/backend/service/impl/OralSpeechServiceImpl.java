@@ -13,8 +13,11 @@ import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Supplier;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
-/** Gọi TTS ngoài transaction; cache hữu hạn và gộp yêu cầu cùng lượt để nghe lại không gọi AI lần nữa. */
+/** Gọi TTS ngoài transaction; cache hữu hạn và gộp cùng lời đọc để tránh tổng hợp lại audio giống nhau. */
 @Service
 @Validated
 @lombok.extern.slf4j.Slf4j
@@ -34,14 +37,21 @@ public class OralSpeechServiceImpl implements OralSpeechService {
     /** Làm nóng cache không mở turn hoặc cấp quyền cho Student. */
     @Override @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void prefetch(com.avies.backend.service.support.OralSpeechPlan plan) {
-        if (settings.ready()) audio(plan.turnId(), () -> provider.synthesize(plan.text(),plan.language()));
+        if (settings.ready()) audio(cacheKey(plan.text(),plan.language()), () -> provider.synthesize(plan.text(),plan.language()));
     }
     /** Kiểm tra quyền cả trước và sau gọi mạng, kể cả khi cache đã có audio. */
     @Override @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public byte[] current(Long examId, OralSpeechRequest request) {
+        long started=System.nanoTime();
         var plan = oral.speechPlan(examId, request); ready();
-        byte[] wav = audio(plan.turnId(), () -> provider.synthesize(plan.text(), plan.language()));
-        oral.confirmSpeech(examId, request, plan.language()); return wav;
+        long planned=System.nanoTime();
+        byte[] wav = audio(cacheKey(plan.text(),plan.language()), () -> provider.synthesize(plan.text(), plan.language()));
+        long synthesized=System.nanoTime();
+        oral.confirmSpeech(examId, request, plan.language());
+        log.info("oral-speech exam={} turn={} planMs={} audioWaitMs={} confirmMs={} totalMs={}",examId,plan.turnId(),
+                TimeUnit.NANOSECONDS.toMillis(planned-started),TimeUnit.NANOSECONDS.toMillis(synthesized-planned),
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-synthesized),TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
+        return wav;
     }
     /** Preview không mở exam và chỉ được đọc hai câu mẫu cố định. */
     @Override @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -49,11 +59,21 @@ public class OralSpeechServiceImpl implements OralSpeechService {
         access.currentUser("STUDENT"); ready();
         String text = "vi".equals(request.language()) ? "Câu số 1. Xin chào. Đây là giọng đọc thử cho phòng thi vấn đáp."
                 : "Question number 1. Hello. This is a voice check for your oral examination.";
-        return audio("preview-" + request.language(), () -> provider.synthesize(text, request.language()));
+        return audio(cacheKey(text,request.language()), () -> provider.synthesize(text, request.language()));
+    }
+    /** Cùng lời đọc/ngôn ngữ/model/voice dùng lại WAV; số câu nằm trong text nên không bị đọc sai thứ tự. */
+    private String cacheKey(String text, String language) {
+        try {
+            var digest=MessageDigest.getInstance("SHA-256");
+            for (var value: List.of(Objects.toString(settings.getModel(),""),Objects.toString(settings.getVoice(),""),language,text)) {
+                digest.update(value.getBytes(StandardCharsets.UTF_8)); digest.update((byte)0);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
     /** Không gọi mạng nếu người quản lý chưa chủ động bật TTS. */
     private void ready() { if (!settings.ready()) throw new AppException(ErrorCode.ORAL_SPEECH_NOT_READY); }
-    /** Một future cho mỗi turn; lỗi không được cache như audio thành công. */
+    /** Một future cho mỗi lời đọc; quota giữ lỗi 30 giây để warmup/click nghe không gọi lại liên tục. */
     private byte[] audio(Object key, Supplier<byte[]> create) {
         Cached item; boolean owner = false;
         synchronized (cache) {
@@ -73,9 +93,13 @@ public class OralSpeechServiceImpl implements OralSpeechService {
                 item.result.complete(wav);
                 success=true;
             } catch (RuntimeException failure) {
-                synchronized (cache) { cache.remove(key, item); }
+                synchronized (cache) {
+                    if (failure instanceof AppException safe && safe.getErrorCode()==ErrorCode.ORAL_SPEECH_QUOTA)
+                        item.expires=clock.instant().plusSeconds(30);
+                    else cache.remove(key, item);
+                }
                 item.result.completeExceptionally(failure);
-            } finally { capacity.release(); log.info("oral-tts turn={} providerMs={} success={}",key,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),success); }
+            } finally { capacity.release(); log.info("oral-tts cache={} providerMs={} success={}",key,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),success); }
         }
         try { return item.result.get(40, TimeUnit.SECONDS); }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AppException(ErrorCode.ORAL_SPEECH_FAILED); }
@@ -94,7 +118,7 @@ public class OralSpeechServiceImpl implements OralSpeechService {
     /** Future chứa byte WAV, không chứa đề/key hoặc dữ liệu Student. */
     private static final class Cached {
         /** Chia sẻ kết quả cho các yêu cầu trùng. */ private final CompletableFuture<byte[]> result = new CompletableFuture<>();
-        /** Cache ngắn hạn, không phải bằng chứng lịch sử bài thi. */ private final Instant expires;
+        /** Cache ngắn hạn; quota chỉ giữ lỗi 30 giây, không được coi là WAV thành công. */ private Instant expires;
         /** Số byte để giới hạn RAM. */ private int size;
         /** Tạo entry trước khi gọi mạng. */ private Cached(Instant expires) { this.expires = expires; }
     }

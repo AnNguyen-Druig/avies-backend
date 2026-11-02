@@ -25,6 +25,12 @@ public interface StudentExamQuestionRepository extends JpaRepository<StudentExam
             + "and e.id<>:studentExamId order by a.id")
     List<StudentExamQuestion> findSelectionHistory(@Param("sessionId") Long sessionId, @Param("studentExamId") Long studentExamId);
 
+    /** Câu Student từng được gán ở cùng môn qua phiên khác; không trộn lịch sử Student/môn khác. */
+    @Query("select a from StudentExamQuestion a join fetch a.studentExam e join e.session s "
+            + "where e.student.id=:studentId and s.subject.id=:subjectId and s.id<>:sessionId order by a.id")
+    List<StudentExamQuestion> findStudentSubjectHistory(@Param("studentId") Long studentId,
+            @Param("subjectId") Long subjectId, @Param("sessionId") Long sessionId);
+
     /** Có câu đã gán thì không thu hồi bài, tránh cascade làm mất câu và transcript bên dưới. */
     boolean existsByStudentExamId(Long studentExamId);
 

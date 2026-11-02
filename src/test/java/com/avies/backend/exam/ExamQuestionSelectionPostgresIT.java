@@ -175,6 +175,30 @@ class ExamQuestionSelectionPostgresIT {
         assertThat(select(target)).extracting(SelectedMainQuestion::getQuestionId).containsExactlyInAnyOrder(c, d);
     }
 
+    /** Bốn phiên mới cùng môn/cùng Student lấy câu chưa gặp; retry vẫn trả nguyên bộ và thứ tự cũ. */
+    @Test void sameStudentGetsFreshQuestionsAcrossFourSessions() {
+        for (int i=0;i<12;i++) fixture.question();
+        var seen=new java.util.HashSet<Long>();
+        for (int attempt=0;attempt<4;attempt++) {
+            long parent=fixture.session(3), exam=fixture.exam(parent,4,1);
+            var chosen=select(exam); var ids=chosen.stream().map(SelectedMainQuestion::getQuestionId).toList();
+            assertThat(ids).hasSize(3).doesNotHaveDuplicates().allMatch(id -> !seen.contains(id));
+            seen.addAll(ids); assertThat(select(exam)).extracting(SelectedMainQuestion::getQuestionId).containsExactlyElementsOf(ids);
+        }
+        assertThat(seen).hasSize(12); assertCount(12);
+    }
+    /** Query cá nhân không lấy câu của Student khác hoặc môn khác, kể cả các bộ cùng tồn tại trong DB. */
+    @Test void personalHistoryIsScopedToStudentAndSubject() {
+        long old=fixture.session(1), own=fixture.exam(old,4,1), otherStudent=fixture.exam(old,6,2);
+        long a=fixture.question(), b=fixture.question(); fixture.link(own,a,1); fixture.link(otherStudent,b,1);
+        long otherSubject=fixture.base.session(1,2,"UPCOMING"), foreign=fixture.exam(otherSubject,4,1);
+        fixture.link(foreign,fixture.question(2,"APPROVED","UNDERSTAND"),1);
+        long target=fixture.session(1);
+        var history=new TransactionTemplate(manager).execute(tx -> links.findStudentSubjectHistory(4L,1L,target));
+        assertThat(history).hasSize(1).extracting(row -> row.getQuestion().getId()).containsExactly(a);
+        assertThat(select(fixture.exam(target,4,1))).extracting(SelectedMainQuestion::getQuestionId).containsExactly(b);
+    }
+
     /** Không đủ ngân hàng tránh lặp toàn phiên vẫn chọn đủ N distinct với overlap nhỏ nhất. */
     @Test
     void fallbackRepeatsAcrossStudentsButNeverWithinOneStudent() {
