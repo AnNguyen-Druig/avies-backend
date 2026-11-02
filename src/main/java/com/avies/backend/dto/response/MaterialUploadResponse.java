@@ -21,6 +21,7 @@ public class MaterialUploadResponse {
     String fileName;
     String storagePath;
     String mimeType;
+    String language;
     Integer totalChunks;
     String processingStatus;
     String uploadedBy;

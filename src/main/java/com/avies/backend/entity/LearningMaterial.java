@@ -42,6 +42,10 @@ public class LearningMaterial {
     @Column(name = "processing_status")
     String processingStatus; // PENDING, PROCESSING, READY, FAILED
 
+    @Builder.Default
+    @Column(name = "language", length = 10, nullable = false)
+    String language = "vi";
+
     @Column(name = "created_at", insertable = false, updatable = false)
     OffsetDateTime createdAt;
 }

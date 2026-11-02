@@ -1,5 +1,6 @@
 package com.avies.backend.service;
 
+import com.avies.backend.dto.request.MaterialUpdateRequest;
 import com.avies.backend.dto.response.MaterialUploadResponse;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -33,6 +34,12 @@ public interface LearningMaterialService {
      */
     @Transactional
     void deleteMaterial(Long materialId);
+
+    /**
+     * Cập nhật tiêu đề và/hoặc ngôn ngữ tài liệu (metadata only — không tái xử lý chunks).
+     */
+    @Transactional
+    MaterialUploadResponse updateMaterial(Long materialId, MaterialUpdateRequest request);
 
     /**
      * Cập nhật tiêu đề tài liệu (metadata only — không tái xử lý chunks).

@@ -51,6 +51,12 @@ public class QuestionUpdateRequest extends QuestionWriteRequest {
     private Integer answerTimeLimitSeconds;
 
     /**
+     * Ngôn ngữ mới ('vi' hoặc 'en').
+     */
+    @Pattern(regexp = "^(?i)(vi|en)$", message = "Ngôn ngữ chỉ chấp nhận 'vi' hoặc 'en'")
+    private String language;
+
+    /**
      * Đánh dấu trường nội dung xuất hiện trong JSON.
      */
     @JsonIgnore
@@ -79,6 +85,12 @@ public class QuestionUpdateRequest extends QuestionWriteRequest {
      */
     @JsonIgnore
     private boolean answerTimeLimitSecondsPresent;
+
+    /**
+     * Đánh dấu trường ngôn ngữ xuất hiện trong JSON.
+     */
+    @JsonIgnore
+    private boolean languagePresent;
 
     /**
      * Ghi nhận nội dung được gửi, kể cả null để kiểm tra tính hợp lệ.
@@ -121,13 +133,21 @@ public class QuestionUpdateRequest extends QuestionWriteRequest {
     }
 
     /**
+     * Ghi nhận yêu cầu thay thế ngôn ngữ của câu hỏi.
+     */
+    public void setLanguage(String value) {
+        languagePresent = true;
+        language = value;
+    }
+
+    /**
      * Bảo đảm PATCH có ít nhất một trường nghiệp vụ và không xóa trường bắt buộc.
      */
     @AssertTrue(message = "PATCH phải có trường cần sửa; nội dung và danh sách chủ đề không được null.")
     @JsonIgnore
     public boolean isPatchValid() {
         return (contentPresent || referenceAnswerPresent || topicsPresent || bloomLevelPresent
-                || answerTimeLimitSecondsPresent)
+                || answerTimeLimitSecondsPresent || languagePresent)
                 && (!contentPresent || (content != null && !content.isBlank()))
                 && (!topicsPresent || topics != null);
     }

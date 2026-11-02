@@ -167,6 +167,9 @@ CREATE TABLE IF NOT EXISTS learning_materials (
             'FAILED'
         )),
 
+    language VARCHAR(10) NOT NULL DEFAULT 'vi'
+        CHECK (language IN ('vi', 'en')),
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -239,6 +242,8 @@ CREATE TABLE IF NOT EXISTS questions (
 
     reference_answer TEXT,
     answer_time_limit_seconds INT CHECK (answer_time_limit_seconds > 0),
+    language VARCHAR(10) NOT NULL DEFAULT 'vi'
+        CHECK (language IN ('vi', 'en')),
     -- Cho phép NULL để tương thích dữ liệu cũ chưa phân loại trong migration.
     source_type VARCHAR(20) DEFAULT 'MANUAL'
         CHECK (source_type IN ('MANUAL', 'IMPORT', 'AI')),
@@ -567,6 +572,9 @@ CREATE INDEX IF NOT EXISTS idx_learning_materials_subject_id
 CREATE INDEX IF NOT EXISTS idx_learning_materials_uploaded_by
     ON learning_materials(uploaded_by);
 
+CREATE INDEX IF NOT EXISTS idx_learning_materials_language
+    ON learning_materials(language);
+
 CREATE INDEX IF NOT EXISTS idx_learning_material_chunks_material_id
     ON learning_material_chunks(learning_material_id);
 
@@ -575,6 +583,9 @@ CREATE INDEX IF NOT EXISTS idx_questions_subject_id
 
 CREATE INDEX IF NOT EXISTS idx_questions_created_by
     ON questions(created_by);
+
+CREATE INDEX IF NOT EXISTS idx_questions_language
+    ON questions(language);
 
 -- rubrics(question_id) already has an index through UNIQUE(question_id).
 

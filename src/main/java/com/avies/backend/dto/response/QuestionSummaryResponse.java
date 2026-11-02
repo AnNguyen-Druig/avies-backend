@@ -54,6 +54,11 @@ public class QuestionSummaryResponse {
     private final QuestionStatus status;
 
     /**
+     * Ngôn ngữ của câu hỏi ('vi' hoặc 'en').
+     */
+    private final String language;
+
+    /**
      * Định danh tác giả.
      */
     private final Long createdById;

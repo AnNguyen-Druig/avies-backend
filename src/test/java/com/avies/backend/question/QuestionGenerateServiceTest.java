@@ -117,7 +117,7 @@ class QuestionGenerateServiceTest {
                 .answerTimeLimitSeconds(120)
                 .build();
 
-        when(aiQuestionGenerationService.generateQuestions(eq(subject.getName()), eq("Cây nhị phân"), anyString(), eq(BloomLevel.UNDERSTAND), eq(1)))
+        when(aiQuestionGenerationService.generateQuestions(eq(subject.getName()), eq("Cây nhị phân"), anyString(), eq(BloomLevel.UNDERSTAND), eq(1), anyString()))
                 .thenReturn(List.of(aiGenerated));
 
         when(questionRepository.saveAndFlush(any(Question.class))).thenAnswer(invocation -> {
@@ -152,7 +152,7 @@ class QuestionGenerateServiceTest {
         // Verify repository interactions
         verify(openAiEmbeddingService).generateEmbeddings(List.of("Cây nhị phân"));
         verify(chunkRepository).searchSimilarChunks(eq(subject.getId()), anyString(), eq(5));
-        verify(aiQuestionGenerationService).generateQuestions(eq(subject.getName()), eq("Cây nhị phân"), anyString(), eq(BloomLevel.UNDERSTAND), eq(1));
+        verify(aiQuestionGenerationService).generateQuestions(eq(subject.getName()), eq("Cây nhị phân"), anyString(), eq(BloomLevel.UNDERSTAND), eq(1), eq("vi"));
         verify(questionRepository).saveAndFlush(any(Question.class));
         verify(auditRepository).save(any(QuestionAuditLog.class));
     }
@@ -196,5 +196,55 @@ class QuestionGenerateServiceTest {
         verifyNoInteractions(openAiEmbeddingService);
         verifyNoInteractions(chunkRepository);
         verifyNoInteractions(aiQuestionGenerationService);
+    }
+
+    @Test
+    @DisplayName("Sinh câu hỏi tiếng Anh khi tài liệu học tập là tiếng Anh và request chọn AUTO")
+    void generateQuestionsInEnglishWhenMaterialIsEnglish() {
+        when(assignmentRepository.existsByLecturerIdAndSubjectId(lecturer.getId(), subject.getId())).thenReturn(true);
+        when(subjectRepository.findById(subject.getId())).thenReturn(Optional.of(subject));
+
+        float[] vector = new float[1536];
+        Arrays.fill(vector, 0.05f);
+        when(openAiEmbeddingService.generateEmbeddings(List.of("Microservices"))).thenReturn(List.of(vector));
+
+        LearningMaterialChunkRepository.ChunkView englishChunk = mock(LearningMaterialChunkRepository.ChunkView.class);
+        when(englishChunk.getMaterialTitle()).thenReturn("Software Architecture Textbook");
+        when(englishChunk.getContent()).thenReturn("Microservices architecture is a design approach to build a single application as a set of small services.");
+        when(chunkRepository.searchSimilarChunks(eq(subject.getId()), anyString(), eq(5)))
+                .thenReturn(List.of(englishChunk));
+
+        GeneratedQuestionDto aiGenerated = GeneratedQuestionDto.builder()
+                .content("Explain the key benefits of Microservices architecture compared to Monolith.")
+                .referenceAnswer("Key benefits: Independent deployment, fault isolation, scalability.")
+                .bloomLevel(BloomLevel.UNDERSTAND)
+                .topics(Set.of("Microservices", "Architecture"))
+                .answerTimeLimitSeconds(120)
+                .build();
+
+        when(aiQuestionGenerationService.generateQuestions(eq(subject.getName()), eq("Microservices"), anyString(), eq(BloomLevel.UNDERSTAND), eq(1), eq("en")))
+                .thenReturn(List.of(aiGenerated));
+
+        when(questionRepository.saveAndFlush(any(Question.class))).thenAnswer(invocation -> {
+            Question q = invocation.getArgument(0);
+            q.setId(51L);
+            return q;
+        });
+
+        QuestionGenerateRequest request = QuestionGenerateRequest.builder()
+                .subjectId(subject.getId())
+                .keyword("Microservices")
+                .bloomLevel(BloomLevel.UNDERSTAND)
+                .count(1)
+                .language("AUTO")
+                .build();
+
+        List<QuestionResponse> responses = questionService.generateQuestions(request);
+
+        assertThat(responses).hasSize(1);
+        QuestionResponse res = responses.get(0);
+        assertThat(res.getId()).isEqualTo(51L);
+        assertThat(res.getContent()).contains("Explain the key benefits of Microservices");
+        verify(aiQuestionGenerationService).generateQuestions(eq(subject.getName()), eq("Microservices"), anyString(), eq(BloomLevel.UNDERSTAND), eq(1), eq("en"));
     }
 }

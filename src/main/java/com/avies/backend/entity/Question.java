@@ -100,6 +100,13 @@ public class Question {
     Integer answerTimeLimitSeconds;
 
     /**
+     * Ngôn ngữ của câu hỏi ('vi' hoặc 'en').
+     */
+    @Builder.Default
+    @Column(name = "language", length = 10, nullable = false)
+    String language = "vi";
+
+    /**
      * Nguồn tạo; null chỉ dành cho dữ liệu cũ chưa xác minh.
      */
     @Enumerated(EnumType.STRING)

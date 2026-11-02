@@ -33,7 +33,8 @@
   "keyword": "Kanji JPD316",
   "bloomLevel": "UNDERSTAND",
   "count": 3,
-  "materialIds": [9]
+  "materialIds": [9],
+  "language": "AUTO"
 }
 ```
 
@@ -46,6 +47,7 @@
 | `bloomLevel` | `String` | Không | `null` | Mức độ nhận thức theo thang Bloom. Chỉ chấp nhận **1 trong 6 giá trị**:<br>• `REMEMBER` (Ghi nhớ)<br>• `UNDERSTAND` (Thông hiểu)<br>• `APPLY` (Vận dụng)<br>• `ANALYZE` (Phân tích)<br>• `EVALUATE` (Đánh giá)<br>• `CREATE` (Sáng tạo)<br>*(Nếu không truyền trường này, AI sẽ tự động phân tích độ phức tạp của chủ đề và gán mức độ phù hợp nhất).* |
 | `count` | `Integer` | Không | `1` | Số lượng câu hỏi muốn sinh. Giá trị hợp lệ từ **1 đến 10**. |
 | `materialIds`| `List<Long>`| Không | `null` | Danh sách ID tài liệu cụ thể của môn học muốn giới hạn phạm vi tìm kiếm (nếu muốn sinh từ tài liệu chỉ định). |
+| `language` | `String` | Không | `"AUTO"` | Ngôn ngữ câu hỏi & đáp án cần sinh:<br>• `"AUTO"`: Hệ thống tự động nhận diện theo ngôn ngữ tài liệu học tập (nếu tài liệu tiếng Anh $\rightarrow$ sinh tiếng Anh, tiếng Việt $\rightarrow$ sinh tiếng Việt).<br>• `"vi"`: Bắt buộc sinh câu hỏi bằng tiếng Việt.<br>• `"en"`: Bắt buộc sinh câu hỏi bằng tiếng Anh. |
 
 ---
 

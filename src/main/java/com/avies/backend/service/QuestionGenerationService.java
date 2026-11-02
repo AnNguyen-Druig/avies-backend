@@ -19,7 +19,7 @@ import java.util.List;
 public interface QuestionGenerationService {
 
     /**
-     * Sinh danh sách câu hỏi và rubric tương ứng từ ngữ cảnh tài liệu và từ khóa.
+     * Sinh danh sách câu hỏi và rubric tương ứng từ ngữ cảnh tài liệu và từ khóa (mặc định tiếng Việt).
      *
      * @param subjectName Tên môn học
      * @param keyword     Từ khóa / chủ đề bài học
@@ -28,11 +28,33 @@ public interface QuestionGenerationService {
      * @param count       Số lượng câu hỏi cần sinh
      * @return Danh sách câu hỏi kèm rubric có cấu trúc JSON
      */
-    List<GeneratedQuestionDto> generateQuestions(
+    default List<GeneratedQuestionDto> generateQuestions(
             String subjectName,
             String keyword,
             String contextText,
             BloomLevel bloomLevel,
             int count
+    ) {
+        return generateQuestions(subjectName, keyword, contextText, bloomLevel, count, "vi");
+    }
+
+    /**
+     * Sinh danh sách câu hỏi và rubric tương ứng theo ngôn ngữ chỉ định ('vi' hoặc 'en').
+     *
+     * @param subjectName Tên môn học
+     * @param keyword     Từ khóa / chủ đề bài học
+     * @param contextText Ngữ cảnh từ 5 đoạn tài liệu liên quan nhất
+     * @param bloomLevel  Mức độ Bloom mong muốn (nếu có)
+     * @param count       Số lượng câu hỏi cần sinh
+     * @param language    Ngôn ngữ mục tiêu ('vi' hoặc 'en')
+     * @return Danh sách câu hỏi kèm rubric có cấu trúc JSON
+     */
+    List<GeneratedQuestionDto> generateQuestions(
+            String subjectName,
+            String keyword,
+            String contextText,
+            BloomLevel bloomLevel,
+            int count,
+            String language
     );
 }

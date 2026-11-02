@@ -88,7 +88,7 @@ public class LearningMaterialController {
                 .build();
     }
 
-    @Operation(summary = "Cập nhật tiêu đề tài liệu", description = "Chỉ cập nhật metadata (tiêu đề), không tái xử lý chunks/embeddings. Chỉ ADMIN.")
+    @Operation(summary = "Cập nhật tài liệu", description = "Cập nhật tiêu đề hoặc ngôn ngữ tài liệu (không tái xử lý chunks/embeddings). Chỉ ADMIN.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Cập nhật thành công"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Không tìm thấy tài liệu")
@@ -99,11 +99,11 @@ public class LearningMaterialController {
             @Parameter(description = "ID tài liệu") @PathVariable("materialId") Long materialId,
             @RequestBody @Valid MaterialUpdateRequest request
     ) {
-        log.info("Nhan yeu cau cap nhat tieu de tai lieu id={}", materialId);
-        MaterialUploadResponse response = learningMaterialService.updateMaterialTitle(materialId, request.getTitle());
+        log.info("Nhan yeu cau cap nhat tai lieu id={}", materialId);
+        MaterialUploadResponse response = learningMaterialService.updateMaterial(materialId, request);
         return ApiResponse.<MaterialUploadResponse>builder()
                 .code(1000)
-                .message("Cập nhật tiêu đề tài liệu thành công")
+                .message("Cập nhật tài liệu thành công")
                 .result(response)
                 .build();
     }
