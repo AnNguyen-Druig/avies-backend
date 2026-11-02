@@ -49,17 +49,24 @@ public class OralDecisionWorker {
     }
     /** Hết quota/ngân sách thì ADVANCE theo quy tắc BE, lỗi AI thì giữ job để RETRY. */
     public void process(long examId, UUID job) {
+        long claimedAt=System.nanoTime();
         OralDecisionWork work;
         try { work=oral.claimDecision(examId, job); } catch (AppException busy) { if (busy.getErrorCode().getCode()!=1303) log.warn("Không nhận được job AI {}, mã {}",job,busy.getErrorCode().getCode()); return; }
         if (work == null) return;
+        long claimMs=TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-claimedAt);
         long started=System.nanoTime();
         OralDecisionResult result=null; Integer error=null;
         try { result=work.canFollowUp() ? Objects.requireNonNull(provider.decide(work)) : OralDecisionResult.advance(); }
         catch (AppException failure) { int code=failure.getErrorCode().getCode(); error=Set.of(1815,1816,1817).contains(code) ? code : 1816; }
         catch (RuntimeException failure) { error=1816; }
         log.info("oral-ai job={} providerMs={} error={}",job,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),error);
+        long completedAt=System.nanoTime();
         for (int attempt=0; attempt<3; attempt++) {
-            try { oral.completeDecision(work,result,error); return; }
+            try {
+                oral.completeDecision(work,result,error);
+                log.info("oral-ai-complete job={} claimMs={} commitMs={} totalMs={}",job,claimMs,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-completedAt),TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-claimedAt));
+                return;
+            }
             catch (AppException conflict) {
                 if (conflict.getErrorCode().getCode()!=1303 || attempt==2) { log.warn("Chưa chốt được job AI {}, mã {}",job,conflict.getErrorCode().getCode()); return; }
                 try { Thread.sleep(150L*(attempt+1)); } catch (InterruptedException stop) { Thread.currentThread().interrupt(); return; }

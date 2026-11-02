@@ -20,7 +20,7 @@ class OralDecisionWorkerTest {
         verify(provider,times(1)).decide(work); verify(oral,times(2)).completeDecision(work,OralDecisionResult.advance(),null);
     }
     /** Context fixture không có key hoặc dữ liệu thật. */
-    private OralDecisionWork work(boolean follow) { return new OralDecisionWork(1,UUID.randomUUID(),UUID.randomUUID(),"en","Question?",List.of(new OralDecisionWork.Exchange("Question?","Answer")),follow); }
+    private OralDecisionWork work(boolean follow) { return new OralDecisionWork(1,UUID.randomUUID(),UUID.randomUUID(),"en","Question?",List.of(new OralDecisionWork.Exchange("Question?","Answer")),follow,OralDecisionWork.Assessment.empty()); }
     /** Chỉ holder claim mới được gọi AI. */
     @Test void lostClaimDoesNotCallProvider() {
         var oral=mock(OralExamService.class); var provider=mock(OralDecisionProvider.class);

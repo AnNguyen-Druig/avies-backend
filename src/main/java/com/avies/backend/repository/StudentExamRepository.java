@@ -13,6 +13,26 @@ import java.util.Optional;
 
 /** Truy cập bài thi sinh viên; không thực hiện thuật toán xếp lịch hay kiểm tra phân công môn. */
 public interface StudentExamRepository extends JpaRepository<StudentExam, Long> {
+    /** Batch nhỏ cho tác vụ hết giờ; service phải khóa và kiểm tra lại trước khi ghi, không tin danh sách ứng viên. */
+    @Query(value="SELECT id FROM aives.student_exams WHERE status='IN_PROGRESS' AND scheduled_end_at<=:now ORDER BY scheduled_end_at,id LIMIT 50",nativeQuery=true)
+    List<Long> findOverdueAttempts(@Param("now") java.time.OffsetDateTime now);
+
+    /** Một chuyến DB giữ đúng chuỗi khóa oral; mỗi CTE phụ thuộc khóa trước, không bỏ khóa vì giảm query. */
+    @Query(value = """
+            WITH owner_lock AS MATERIALIZED (SELECT id FROM aives.users WHERE id=:ownerId FOR UPDATE NOWAIT),
+            subject_lock AS MATERIALIZED (SELECT s.id FROM aives.subjects s,owner_lock WHERE s.id=:subjectId FOR SHARE OF s),
+            session_lock AS MATERIALIZED (SELECT s.id FROM aives.exam_sessions s,owner_lock o,subject_lock u
+                WHERE s.id=:sessionId AND s.lecturer_id=o.id AND s.subject_id=u.id FOR UPDATE OF s NOWAIT),
+            student_lock AS MATERIALIZED (SELECT u.id FROM aives.users u,session_lock WHERE u.id=:studentId FOR SHARE OF u NOWAIT),
+            exam_lock AS MATERIALIZED (SELECT e.id FROM aives.student_exams e,session_lock s,student_lock u
+                WHERE e.id=:examId AND e.session_id=s.id AND e.student_id=u.id FOR UPDATE OF e NOWAIT),
+            question_lock AS MATERIALIZED (SELECT q.id FROM aives.student_exam_questions q,exam_lock e
+                WHERE q.student_exam_id=e.id ORDER BY q.id FOR UPDATE OF q NOWAIT)
+            SELECT e.id,(SELECT count(*) FROM question_lock) FROM exam_lock e
+            """, nativeQuery = true)
+    List<Object[]> lockOralHierarchy(@Param("examId") Long examId,@Param("sessionId") Long sessionId,
+            @Param("ownerId") Long ownerId,@Param("subjectId") Long subjectId,@Param("studentId") Long studentId);
+
     /** Sau khóa parent, khóa toàn bộ lượt theo ID để Close tuần tự với Start/Finish và insert câu. */
     @Query(value = "SELECT id FROM aives.student_exams WHERE session_id=:id ORDER BY id FOR UPDATE NOWAIT", nativeQuery = true)
     List<Long> lockForSessionClosure(@Param("id") Long id);

@@ -16,6 +16,59 @@ import static org.mockito.Mockito.*;
 
 /** Cache và thứ tự kiểm tra quyền không phụ thuộc Docker hoặc provider thật. */
 class OralSpeechServiceTest {
+    /** Quota warmup không bị yêu cầu nghe gọi lại ngay; sau cooldown vẫn retry được và không mở giờ trả lời. */
+    @Test void quotaCooldownAvoidsRepeatedProviderCallsAndExpires() {
+        var oral=mock(OralExamService.class); var provider=mock(OralSpeechProvider.class); var settings=mock(OralSpeechProperties.class);
+        var clock=mock(Clock.class); var instant=Instant.parse("2026-11-02T00:00:00Z"); when(clock.instant()).thenReturn(instant); when(settings.ready()).thenReturn(true);
+        var plan=OralSpeechPlan.from(UUID.randomUUID(),"vi",1,0,"Câu hỏi thử hạn mức?");
+        var request=new OralSpeechRequest(UUID.randomUUID(),plan.turnId(),0L); when(oral.speechPlan(1L,request)).thenReturn(plan);
+        when(provider.synthesize(anyString(),anyString())).thenThrow(new AppException(ErrorCode.ORAL_SPEECH_QUOTA)).thenReturn(GeminiOralSpeechProviderTest.wav());
+        var service=new OralSpeechServiceImpl(oral,provider,mock(ExamAccessPolicy.class),settings,clock);
+        assertThatThrownBy(() -> service.prefetch(plan)).isInstanceOf(AppException.class);
+        assertThatThrownBy(() -> service.current(1L,request)).isInstanceOfSatisfying(AppException.class,e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ORAL_SPEECH_QUOTA));
+        verify(provider,times(1)).synthesize(anyString(),anyString()); verify(oral,never()).confirmSpeech(anyLong(),any(),anyString());
+        when(clock.instant()).thenReturn(instant.plusSeconds(31));
+        assertThat(service.current(1L,request)).isEqualTo(GeminiOralSpeechProviderTest.wav());
+        verify(provider,times(2)).synthesize(anyString(),anyString()); verify(oral).confirmSpeech(1L,request,"vi");
+    }
+
+    /** Lỗi mạng không bị giữ như quota, lần nghe tiếp vẫn gọi lại provider ngay. */
+    @Test void transientSpeechFailureIsNotCachedAsQuota() {
+        var settings=mock(OralSpeechProperties.class); var provider=mock(OralSpeechProvider.class); when(settings.ready()).thenReturn(true);
+        when(provider.synthesize(anyString(),anyString())).thenThrow(new AppException(ErrorCode.ORAL_SPEECH_FAILED)).thenReturn(GeminiOralSpeechProviderTest.wav());
+        var service=new OralSpeechServiceImpl(mock(OralExamService.class),provider,mock(ExamAccessPolicy.class),settings,Clock.systemUTC());
+        var plan=OralSpeechPlan.from(UUID.randomUUID(),"en",1,0,"Explain encapsulation?");
+        assertThatThrownBy(() -> service.prefetch(plan)).isInstanceOf(AppException.class); service.prefetch(plan);
+        verify(provider,times(2)).synthesize(anyString(),anyString());
+    }
+    /** Hai lượt khác nhau có cùng lời đọc dùng lại audio nhưng mỗi lượt vẫn phải xác thực/confirm riêng. */
+    @Test void identicalPromptsAcrossAttemptsReuseAudioAndReauthorize() {
+        var oral=mock(OralExamService.class); var provider=mock(OralSpeechProvider.class); var settings=mock(OralSpeechProperties.class);
+        when(settings.ready()).thenReturn(true);
+        var first=OralSpeechPlan.from(UUID.randomUUID(),"vi",1,0,"Giải thích kiến trúc phần mềm.");
+        var second=OralSpeechPlan.from(UUID.randomUUID(),"vi",1,0,"Giải thích kiến trúc phần mềm.");
+        var request1=new OralSpeechRequest(UUID.randomUUID(),first.turnId(),0L); var request2=new OralSpeechRequest(UUID.randomUUID(),second.turnId(),0L);
+        when(oral.speechPlan(1L,request1)).thenReturn(first); when(oral.speechPlan(2L,request2)).thenReturn(second);
+        when(provider.synthesize(anyString(),anyString())).thenReturn(GeminiOralSpeechProviderTest.wav());
+        var service=new OralSpeechServiceImpl(oral,provider,mock(ExamAccessPolicy.class),settings,Clock.systemUTC());
+        service.prefetch(first); service.current(1L,request1); service.current(2L,request2);
+        verify(provider,times(1)).synthesize(first.text(),"vi"); verify(oral).confirmSpeech(1L,request1,"vi"); verify(oral).confirmSpeech(2L,request2,"vi");
+        when(oral.speechPlan(2L,request2)).thenThrow(new AppException(ErrorCode.STUDENT_EXAM_NOT_FOUND));
+        assertThatThrownBy(() -> service.current(2L,request2)).isInstanceOf(AppException.class); verifyNoMoreInteractions(provider);
+    }
+    /** Cache không được dùng audio có sai số câu, ngôn ngữ, voice hoặc model. */
+    @Test void speechCacheIncludesAnnouncementLanguageVoiceAndModel() {
+        var settings=mock(OralSpeechProperties.class); var provider=mock(OralSpeechProvider.class); when(settings.ready()).thenReturn(true);
+        when(settings.getModel()).thenReturn("tts-a"); when(settings.getVoice()).thenReturn("Kore");
+        when(provider.synthesize(anyString(),anyString())).thenReturn(GeminiOralSpeechProviderTest.wav());
+        var service=new OralSpeechServiceImpl(mock(OralExamService.class),provider,mock(ExamAccessPolicy.class),settings,Clock.systemUTC());
+        var first=OralSpeechPlan.from(UUID.randomUUID(),"vi",1,0,"Câu hỏi về API?");
+        service.prefetch(first); service.prefetch(OralSpeechPlan.from(UUID.randomUUID(),"vi",2,0,"Câu hỏi về API?"));
+        service.prefetch(new OralSpeechPlan(UUID.randomUUID(),"en",first.text()));
+        when(settings.getVoice()).thenReturn("Puck"); service.prefetch(first);
+        when(settings.getModel()).thenReturn("tts-b"); service.prefetch(first);
+        verify(provider,times(5)).synthesize(anyString(),anyString());
+    }
     /** Prefetch không mở giờ trả lời; yêu cầu nghe thật dùng cache nhưng vẫn xác thực hai lần. */
     @Test void warmupReusesAudioWithoutOpeningTurn() {
         var oral=mock(OralExamService.class); var provider=mock(OralSpeechProvider.class); var settings=mock(OralSpeechProperties.class);

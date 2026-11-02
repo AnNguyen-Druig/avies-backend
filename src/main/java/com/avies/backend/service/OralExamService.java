@@ -7,12 +7,14 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.util.UUID;
 
-/** Biên của bộ điều phối; chỉ ba phương thức đầu được công bố qua HTTP Student. */
+/** Biên điều phối; controller chỉ công bố thao tác Student, các hàm expiry/claim/callback dành riêng cho worker nội bộ. */
 public interface OralExamService {
     /** Dùng Start Feature 2 để chốt đề trước khi mở tiến trình hội thoại. */
     OralExamResponse open(@NotNull @Positive Long examId, @NotNull @Valid OralExamStartRequest request);
     /** Đọc trạng thái của chính Student và đồng bộ giới hạn thời gian máy chủ. */
     OralExamResponse get(@NotNull @Positive Long examId);
+    /** Chỉ tác vụ nội bộ gọi; khóa/recheck deadline để chốt EXPIRED, không yêu cầu Student còn mở tab. */
+    boolean expireOverdue(Long examId);
     /** Giữ quyền riêng, không dùng hàng đợi thao tác nghiệp vụ hoặc revision của lượt đang nghe. */
     com.avies.backend.dto.response.OralLeaseResponse renewLease(@NotNull @Positive Long examId, @NotNull @Valid OralExamStartRequest request);
     /** Lệnh phiên bản/idempotency, không nhận nội dung câu trả lời. */

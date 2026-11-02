@@ -12,6 +12,7 @@ import java.util.function.Function;
 
 /** Máy trạng thái thuần: không gọi AI, repository hoặc tin đồng hồ/ngân sách do Student gửi. */
 @Component
+@lombok.extern.slf4j.Slf4j
 public class OralExamCoordinator {
     /** Đồng bộ đồng hồ trước mọi thao tác; true nghĩa là đã đổi câu hoặc kết thúc do thời gian. */
     public boolean synchronize(OralExamProgress p, OffsetDateTime now, OffsetDateTime deadline, Function<Long,String> prompt) {
@@ -33,6 +34,7 @@ public class OralExamCoordinator {
                 boolean stt=p.getPhase()==OralExamPhase.TRANSCRIBING;
                 failure(p,s.getId(),now);
                 if (stt) s.setSttErrorCode(1811); else s.setDecisionErrorCode(1816);
+                log.warn("oral-processing exam={} job={} stage={} reason=WATCHDOG_TIMEOUT",p.getStudentExamId(),s.getId(),stt ? "STT" : "AI");
                 return true;
             }
         }

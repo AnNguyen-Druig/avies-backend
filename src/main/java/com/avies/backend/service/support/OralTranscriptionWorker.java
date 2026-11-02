@@ -50,17 +50,31 @@ public class OralTranscriptionWorker {
     }
     /** Gọi mạng ngoài transaction; lỗi kỹ thuật không tạo transcript rỗng hoặc quyết định follow-up thay AI. */
     public void process(long examId, UUID job) {
+        long claimedAt=System.nanoTime();
         OralTranscriptionWork work;
         try { work = oral.claimTranscription(examId, job); } catch (AppException busy) { if (busy.getErrorCode().getCode()!=1303) log.warn("Không nhận được job STT {}, mã {}",job,busy.getErrorCode().getCode()); return; }
         if (work == null) return;
+        long claimMs=TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-claimedAt);
         long started=System.nanoTime();
-        String text = null; Integer error = null;
-        try { text = Objects.requireNonNull(provider.transcribe(store.read(job, work.sha256()), work.language())); }
-        catch (AppException failure) { int code = failure.getErrorCode().getCode(); error = Set.of(1810,1811,1812,1813).contains(code) ? code : 1811; }
-        catch (RuntimeException failure) { error = 1811; }
+        String text = null; Integer error = null; String stage="READ_AUDIO";
+        try { var audio=store.read(job,work.sha256()); stage="GROQ"; text = Objects.requireNonNull(provider.transcribe(audio, work.language())); }
+        catch (OralTranscriptionException failure) {
+            error=failure.getErrorCode().getCode();
+            log.warn("oral-stt exam={} job={} stage={} reason={} httpStatus={} segment={}",examId,job,stage,failure.getReason(),failure.getProviderStatus(),failure.getSegmentIndex());
+        }
+        catch (AppException failure) {
+            int code = failure.getErrorCode().getCode(); error = Set.of(1810,1811,1812,1813).contains(code) ? code : 1811;
+            log.warn("oral-stt exam={} job={} stage={} code={}",examId,job,stage,code);
+        }
+        catch (RuntimeException failure) { error = 1811; log.warn("oral-stt exam={} job={} stage={} exceptionType={}",examId,job,stage,failure.getClass().getSimpleName()); }
         log.info("oral-stt job={} providerMs={} error={}",job,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),error);
+        long completedAt=System.nanoTime();
         for (int attempt=0; attempt<3; attempt++) {
-            try { oral.completeTranscription(work,text,error); return; }
+            try {
+                oral.completeTranscription(work,text,error);
+                log.info("oral-stt-complete job={} claimMs={} commitMs={} totalMs={}",job,claimMs,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-completedAt),TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-claimedAt));
+                return;
+            }
             catch (AppException conflict) {
                 if (conflict.getErrorCode().getCode()!=1303 || attempt==2) { log.warn("Chưa chốt được job STT {}, mã {}",job,conflict.getErrorCode().getCode()); return; }
                 try { Thread.sleep(150L*(attempt+1)); } catch (InterruptedException stop) { Thread.currentThread().interrupt(); return; }

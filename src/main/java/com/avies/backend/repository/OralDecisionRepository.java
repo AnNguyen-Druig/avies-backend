@@ -11,10 +11,12 @@ import java.util.*;
 @Repository
 public class OralDecisionRepository {
     /** Tham gia transaction hiện tại khi được service gọi. */ private final JdbcTemplate jdbc;
+    /** Schema đã kiểm tra thành công không cần query information_schema ở mỗi claim/callback. */ private volatile boolean schemaReady;
     /** Không mở datasource khác hoặc đọc .env. */ public OralDecisionRepository(DataSource source) { jdbc = new JdbcTemplate(source); }
     /** Code có thể triển khai trước migration mà không làm startup hỏng. */
     public boolean ready() {
-        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT count(*)=3 FROM information_schema.columns WHERE table_schema='aives' AND table_name='oral_answer_submissions' AND column_name IN ('decision_claim_id','decision_claim_until','decision_error_code')", Boolean.class));
+        if (!schemaReady) schemaReady=Boolean.TRUE.equals(jdbc.queryForObject("SELECT count(*)=3 FROM information_schema.columns WHERE table_schema='aives' AND table_name='oral_answer_submissions' AND column_name IN ('decision_claim_id','decision_claim_until','decision_error_code')", Boolean.class));
+        return schemaReady;
     }
     /** Chưa nâng cấp thì báo rõ, không tạo SQL tự động trên Supabase. */ public void requireReady() { if (!ready()) throw new AppException(ErrorCode.ORAL_SCHEMA_NOT_READY); }
     /** Caller đã khóa parent/aggregate như các thao tác oral khác. */

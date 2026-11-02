@@ -11,10 +11,12 @@ import java.util.*;
 @Repository
 public class OralAudioRepository {
     /** Tham gia transaction hiện tại. */ private final JdbcTemplate jdbc;
+    /** Chỉ cache kết quả schema đủ cột, không cache thiếu migration để có thể triển khai bổ sung. */ private volatile boolean schemaReady;
     /** Datasource do Spring quản lý. */ public OralAudioRepository(DataSource source) { jdbc = new JdbcTemplate(source); }
     /** Thiếu migration mới không làm các API cũ hoặc startup BE bị hỏng. */
     public boolean ready() {
-        return jdbc.queryForObject("SELECT count(*)=8 FROM information_schema.columns WHERE table_schema='aives' AND table_name='oral_answer_submissions' AND column_name IN ('audio_sha256','audio_media_type','audio_bytes','audio_received_at','audio_storage_id','stt_claim_id','stt_claim_until','stt_error_code')", Boolean.class);
+        if (!schemaReady) schemaReady=Boolean.TRUE.equals(jdbc.queryForObject("SELECT count(*)=8 FROM information_schema.columns WHERE table_schema='aives' AND table_name='oral_answer_submissions' AND column_name IN ('audio_sha256','audio_media_type','audio_bytes','audio_received_at','audio_storage_id','stt_claim_id','stt_claim_until','stt_error_code')", Boolean.class));
+        return schemaReady;
     }
     /** Chặn rõ khi chưa áp dụng migration STT. */ public void requireReady() { if (!ready()) throw new AppException(ErrorCode.ORAL_SCHEMA_NOT_READY); }
     /** Ghi một lần, chỉ sau khi file đã publish thành công. */

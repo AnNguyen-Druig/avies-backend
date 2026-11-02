@@ -10,8 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public final class ExamSnapshotJsonCodec {
 
     // Một instance duy nhất trong phạm vi ClassLoader.
-    private static final ExamSnapshotJsonCodec INSTANCE =
-            new ExamSnapshotJsonCodec();
+    private static final ExamSnapshotJsonCodec INSTANCE = new ExamSnapshotJsonCodec();
 
     private final ObjectMapper mapper;
 

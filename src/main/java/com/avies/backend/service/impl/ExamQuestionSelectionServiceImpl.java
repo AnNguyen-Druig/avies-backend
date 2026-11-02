@@ -108,7 +108,9 @@ public class ExamQuestionSelectionServiceImpl implements ExamQuestionSelectionSe
             throw new AppException(initial.basicCount() >= count ? ErrorCode.EXAM_QUESTION_RUBRIC_INVALID : ErrorCode.EXAM_QUESTION_POOL_INSUFFICIENT);
         }
         var history = selections.findSelectionHistory(parentId, studentExamId).stream().map(row -> new ExamQuestionSelector.Use(row.getStudentExam().getId(), row.getQuestion().getId(), row.getStudentExam().getStartedAt(), row.getStudentExam().getCompletedAt(), row.getId())).toList();
-        var chosen = selector.choose(new ArrayList<>(initial.candidates().values()), history, count);
+        var personalHistory=selections.findStudentSubjectHistory(exam.getStudent().getId(),parent.getSubject().getId(),parentId).stream()
+                .map(row -> new ExamQuestionSelector.Use(row.getStudentExam().getId(),row.getQuestion().getId(),row.getStudentExam().getStartedAt(),row.getStudentExam().getCompletedAt(),row.getId())).toList();
+        var chosen = selector.choose(new ArrayList<>(initial.candidates().values()), history, personalHistory, count);
         lockAndRevalidate(chosen, parent.getSubject().getId(), rubric);
         OffsetDateTime capturedAt = OffsetDateTime.now(ZoneOffset.UTC);
         List<StudentExamQuestion> created = IntStream.range(0, count).mapToObj(index -> {
@@ -120,6 +122,8 @@ public class ExamQuestionSelectionServiceImpl implements ExamQuestionSelectionSe
                     .snapshotQuestionVersion(candidate.version()).snapshotCapturedAt(capturedAt).build();
         }).toList();
         selections.saveAllAndFlush(created);
+        log.info("exam-selection session={} attempt={} eligible={} sessionHistory={} studentHistory={} selectedIds={}",
+                parentId,studentExamId,initial.candidates().size(),history.size(),personalHistory.size(),chosen.stream().map(ExamQuestionEligibility.Candidate::id).toList());
         return created.stream().map(this::response).toList();
     }
 

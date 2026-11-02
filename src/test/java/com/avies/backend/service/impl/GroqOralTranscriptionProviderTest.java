@@ -2,6 +2,7 @@ package com.avies.backend.service.impl;
 
 import com.avies.backend.config.OralTranscriptionProperties;
 import com.avies.backend.exception.AppException;
+import com.avies.backend.exception.OralTranscriptionException;
 import com.avies.backend.service.support.OralAudioPayload;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,11 +47,49 @@ public class GroqOralTranscriptionProviderTest {
     }
     /** Phân biệt key/quota/audio/mạng, không trả lỗi thô chứa thông tin nhà cung cấp. */
     @ParameterizedTest @ValueSource(ints={400,401,403,413,422,429,500}) void providerFailuresAreSafe(int status) {
-        server.expect(requestTo("https://api.groq.com/openai/v1/audio/transcriptions")).andRespond(withStatus(HttpStatus.valueOf(status)).body("PRIVATE_KEY_PROVIDER_BODY"));
+        for (int attempt=0; attempt<(status==500?2:1); attempt++)
+            server.expect(requestTo("https://api.groq.com/openai/v1/audio/transcriptions")).andRespond(withStatus(HttpStatus.valueOf(status)).body("PRIVATE_KEY_PROVIDER_BODY"));
         assertThatThrownBy(() -> provider.transcribe(OralAudioPayload.detect(audio()),"en")).isInstanceOfSatisfying(AppException.class, e -> {
             assertThat(e.getErrorCode().getCode()).isEqualTo(status==429?1812:status==401||status==403?1810:status==400||status==413||status==422?1813:1811);
             assertThat(e.getMessage()).doesNotContain("PRIVATE");
         }); server.verify();
+    }
+    /** 5xx tạm thời được thử đúng một lần bằng cùng bytes, không yêu cầu Student ghi lại. */
+    @Test void earlyServerFailureRetriesSameAudioOnce() {
+        var body=content().string(org.hamcrest.Matchers.allOf(org.hamcrest.Matchers.containsString("answer.wav"),org.hamcrest.Matchers.containsString("timestamp_granularities[]")));
+        server.expect(requestTo("https://api.groq.com/openai/v1/audio/transcriptions")).andExpect(body).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        server.expect(requestTo("https://api.groq.com/openai/v1/audio/transcriptions")).andExpect(body).andRespond(withSuccess(response("Câu trả lời",0.01),MediaType.APPLICATION_JSON));
+        assertThat(provider.transcribe(OralAudioPayload.detect(audio()),"vi")).isEqualTo("Câu trả lời"); server.verify();
+    }
+    /** Hai lần 5xx vẫn trả lỗi kỹ thuật cùng mã, không lặp vô hạn. */
+    @Test void repeatedServerFailureStopsAfterOneRetry() {
+        for (int attempt=0; attempt<2; attempt++) server.expect(requestTo("https://api.groq.com/openai/v1/audio/transcriptions")).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        assertThatThrownBy(() -> provider.transcribe(OralAudioPayload.detect(audio()),"en")).isInstanceOfSatisfying(OralTranscriptionException.class,error -> {
+            assertThat(error.getProviderStatus()).isEqualTo(502); assertThat(error.getReason()).isEqualTo(OralTranscriptionException.Reason.HTTP_ERROR);
+            assertThat(error.getErrorCode().getCode()).isEqualTo(1811);
+        }); server.verify();
+    }
+    /** Lỗi quality có lý do/chỉ số đoạn; không tự gọi lại hoặc chấp nhận transcript chưa đủ tin cậy. */
+    @Test void lowConfidenceIsDiagnosableWithoutLeakingText() {
+        server.expect(requestTo("https://api.groq.com/openai/v1/audio/transcriptions"))
+                .andRespond(withSuccess(response("PRIVATE_STUDENT_ANSWER",0.01).replace("-0.1","-1.2"),MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> provider.transcribe(OralAudioPayload.detect(audio()),"vi")).isInstanceOfSatisfying(OralTranscriptionException.class,error -> {
+            assertThat(error.getReason()).isEqualTo(OralTranscriptionException.Reason.LOW_CONFIDENCE); assertThat(error.getSegmentIndex()).isZero();
+            assertThat(error.getMessage()).doesNotContain("PRIVATE"); assertThat(error.transientServerError()).isFalse();
+        }); server.verify();
+    }
+    /** JSON hỏng và metadata sai được phân biệt trong log nội bộ. */
+    @Test void malformedJsonIsDiagnosableAndNotRetried() {
+        server.expect(requestTo("https://api.groq.com/openai/v1/audio/transcriptions")).andRespond(withSuccess("{",MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> provider.transcribe(OralAudioPayload.detect(audio()),"vi")).isInstanceOfSatisfying(OralTranscriptionException.class,error ->
+                assertThat(error.getReason()).isEqualTo(OralTranscriptionException.Reason.INVALID_JSON)); server.verify();
+    }
+    /** Không suy đoán timestamp sai thành im lặng hoặc tạo text thay thế. */
+    @Test void invalidTimestampHasSpecificReason() throws Exception {
+        var root=new ObjectMapper().readTree(response("PRIVATE_STUDENT_ANSWER",0.01).replace("\"end\":1.2","\"end\":40"));
+        assertThatThrownBy(() -> GroqOralTranscriptionProvider.decode(root)).isInstanceOfSatisfying(OralTranscriptionException.class,error -> {
+            assertThat(error.getReason()).isEqualTo(OralTranscriptionException.Reason.INVALID_TIMESTAMPS); assertThat(error.getSegmentIndex()).isZero();
+        });
     }
     /** Không ghi text hallucination của đoạn im lặng làm bằng chứng Student. */
     @Test void highNoSpeechProbabilityReturnsEmptyInsteadOfHallucination() throws Exception {

@@ -13,6 +13,15 @@ import static org.mockito.ArgumentMatchers.*;
 
 /** Worker không tạo transcript giả khi quota, file hoặc kết quả provider bị lỗi. */
 class OralTranscriptionWorkerTest {
+    /** Provider lỗi có metadata vẫn chốt lỗi cho đúng job, không tạo transcript hoặc chuyển câu. */
+    @Test void classifiedFailureKeepsExistingContract() {
+        var oral=mock(OralExamService.class); var provider=mock(OralTranscriptionProvider.class); var store=mock(OralAudioStore.class);
+        var job=UUID.randomUUID(); var work=new OralTranscriptionWork(1L,job,UUID.randomUUID(),"vi","HASH");
+        when(oral.claimTranscription(1L,job)).thenReturn(work); when(store.read(job,"HASH")).thenReturn(OralAudioPayload.detect(GroqOralTranscriptionProviderTest.audio()));
+        when(provider.transcribe(any(),eq("vi"))).thenThrow(new OralTranscriptionException(ErrorCode.ORAL_TRANSCRIPTION_FAILED,OralTranscriptionException.Reason.LOW_CONFIDENCE,null,2));
+        new OralTranscriptionWorker(mock(OralTranscriptionProperties.class),mock(OralAudioRepository.class),oral,store,provider,null).process(1L,job);
+        verify(provider,times(1)).transcribe(any(),eq("vi")); verify(oral).completeTranscription(work,null,1811);
+    }
     /** Tranh khóa lúc chốt thì gửi lại chính kết quả trong RAM, không gọi Groq lại. */
     @Test void commitConflictRetriesSameResultWithoutSecondProviderCall() {
         var oral=mock(OralExamService.class); var provider=mock(OralTranscriptionProvider.class); var store=mock(OralAudioStore.class);
