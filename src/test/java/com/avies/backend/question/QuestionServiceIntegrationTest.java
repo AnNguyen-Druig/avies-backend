@@ -421,6 +421,20 @@ class QuestionServiceIntegrationTest {
                 new UsernamePasswordAuthenticationToken(user.getUsername(), "unused", List.of()));
     }
 
+    @Test
+    void createAndPatchQuestionLanguage() {
+        login(owner);
+        QuestionCreationRequest req = creation("Explain Dependency Injection principle");
+        req.setLanguage("en");
+        QuestionResponse created = service.createQuestion(req);
+        assertThat(created.getLanguage()).isEqualTo("en");
+
+        QuestionUpdateRequest patchReq = patch(created);
+        patchReq.setLanguage("vi");
+        QuestionResponse patched = service.updateQuestion(created.getId(), patchReq);
+        assertThat(patched.getLanguage()).isEqualTo("vi");
+    }
+
     /** Tạo request mặc định hợp lệ để từng test chỉ thay đổi dữ liệu cần kiểm tra. */
     private QuestionCreationRequest creation(String content) {
         QuestionCreationRequest request = new QuestionCreationRequest();

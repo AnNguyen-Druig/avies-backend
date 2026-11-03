@@ -47,6 +47,8 @@ public final class QuestionSpecifications {
             if (filter.getStatus() != null) conditions.add(cb.equal(root.get("status"), filter.getStatus()));
             if (filter.getSourceType() != null)
                 conditions.add(cb.equal(root.get("sourceType"), filter.getSourceType()));
+            if (filter.getLanguage() != null && !filter.getLanguage().isBlank())
+                conditions.add(cb.equal(cb.lower(root.get("language")), filter.getLanguage().trim().toLowerCase(Locale.ROOT)));
             if (filter.getTopic() != null && !filter.getTopic().isBlank()) {
                 Subquery<Long> tagged = query.subquery(Long.class);
                 Root<Question> taggedQuestion = tagged.from(Question.class);

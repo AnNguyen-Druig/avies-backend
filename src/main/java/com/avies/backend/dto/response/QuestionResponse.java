@@ -54,6 +54,11 @@ public class QuestionResponse {
     private final Integer answerTimeLimitSeconds;
 
     /**
+     * Ngôn ngữ của câu hỏi ('vi' hoặc 'en').
+     */
+    private final String language;
+
+    /**
      * Nguồn tạo; dữ liệu cũ chưa xác minh có thể chưa có giá trị.
      */
     private final QuestionSourceType sourceType;

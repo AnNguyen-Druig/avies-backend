@@ -49,4 +49,11 @@ public class QuestionGenerateRequest {
      * Danh sách mã tài liệu cụ thể nếu muốn giới hạn phạm vi tìm kiếm (tùy chọn).
      */
     List<Long> materialIds;
+
+    /**
+     * Ngôn ngữ mong muốn khi sinh câu hỏi: 'AUTO' (tự động theo tài liệu), 'vi' (tiếng Việt), 'en' (tiếng Anh).
+     * Mặc định là null hoặc 'AUTO'.
+     */
+    @Pattern(regexp = "^(?i)(auto|vi|en)?$", message = "Ngôn ngữ chỉ chấp nhận 'AUTO', 'vi' hoặc 'en'")
+    String language;
 }

@@ -16,11 +16,12 @@ public interface LearningMaterialChunkRepository extends JpaRepository<LearningM
         Long getId();
         String getContent();
         String getMaterialTitle();
+        String getMaterialLanguage();
     }
 
     // Query Cosine Similarity dựa trên toán tử <=> của pgvector, chỉ lấy các cột cần thiết cho Context RAG
     @Query(value = """
-            SELECT c.id AS id, c.content AS content, m.title AS materialTitle
+            SELECT c.id AS id, c.content AS content, m.title AS materialTitle, m.language AS materialLanguage
             FROM aives.learning_material_chunks c
             JOIN aives.learning_materials m ON c.learning_material_id = m.id
             WHERE m.subject_id = :subjectId
@@ -34,7 +35,7 @@ public interface LearningMaterialChunkRepository extends JpaRepository<LearningM
     );
 
     @Query(value = """
-            SELECT c.id AS id, c.content AS content, m.title AS materialTitle
+            SELECT c.id AS id, c.content AS content, m.title AS materialTitle, m.language AS materialLanguage
             FROM aives.learning_material_chunks c
             JOIN aives.learning_materials m ON c.learning_material_id = m.id
             WHERE m.subject_id = :subjectId AND m.id IN (:materialIds)

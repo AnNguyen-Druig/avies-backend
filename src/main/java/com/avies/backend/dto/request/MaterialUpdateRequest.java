@@ -1,6 +1,6 @@
 package com.avies.backend.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -12,7 +12,10 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class MaterialUpdateRequest {
 
-    @NotBlank(message = "Tiêu đề tài liệu không được để trống")
     @Size(max = 255, message = "Tiêu đề tài liệu tối đa 255 ký tự")
     String title;
+
+    @Pattern(regexp = "^(?i)(vi|en)$", message = "Ngôn ngữ tài liệu chỉ chấp nhận 'vi' hoặc 'en'")
+    String language;
 }
+

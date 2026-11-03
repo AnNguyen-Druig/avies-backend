@@ -34,4 +34,24 @@ class AiQuestionGenerationServiceTest {
         ).isInstanceOf(com.avies.backend.exception.AppException.class)
          .hasFieldOrPropertyWithValue("errorCode", com.avies.backend.exception.ErrorCode.AI_GENERATION_FAILED);
     }
+
+    @Test
+    @DisplayName("Ném lỗi AI_GENERATION_FAILED khi gọi với language='en' mà không có API key hợp lệ")
+    void throwsExceptionWhenNoApiKeyConfiguredWithEnglishLanguage() {
+        String subjectName = "Software Architecture";
+        String keyword = "Microservices";
+        String context = "Microservices architecture divides systems into modular services...";
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                service.generateQuestions(
+                        subjectName,
+                        keyword,
+                        context,
+                        BloomLevel.UNDERSTAND,
+                        3,
+                        "en"
+                )
+        ).isInstanceOf(com.avies.backend.exception.AppException.class)
+         .hasFieldOrPropertyWithValue("errorCode", com.avies.backend.exception.ErrorCode.AI_GENERATION_FAILED);
+    }
 }

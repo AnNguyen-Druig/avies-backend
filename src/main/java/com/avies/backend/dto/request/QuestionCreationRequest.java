@@ -51,4 +51,10 @@ public class QuestionCreationRequest extends QuestionWriteRequest {
      */
     @Positive
     private Integer answerTimeLimitSeconds;
+
+    /**
+     * Ngôn ngữ của câu hỏi: 'vi' (mặc định) hoặc 'en'.
+     */
+    @Pattern(regexp = "^(?i)(vi|en)$", message = "Ngôn ngữ chỉ chấp nhận 'vi' hoặc 'en'")
+    private String language = "vi";
 }

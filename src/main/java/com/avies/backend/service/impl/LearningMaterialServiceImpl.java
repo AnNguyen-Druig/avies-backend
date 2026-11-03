@@ -1,5 +1,6 @@
 package com.avies.backend.service.impl;
 
+import com.avies.backend.dto.request.MaterialUpdateRequest;
 import com.avies.backend.dto.response.MaterialUploadResponse;
 import com.avies.backend.entity.LearningMaterial;
 import com.avies.backend.entity.Subject;
@@ -15,6 +16,7 @@ import com.avies.backend.service.DocumentParserService;
 import com.avies.backend.service.LearningMaterialService;
 import com.avies.backend.service.EmbeddingService;
 import com.avies.backend.service.TextChunkingService;
+import com.avies.backend.service.support.LanguageDetectorHelper;
 import com.avies.backend.service.support.SubjectAccessHelper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -125,6 +127,10 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
             // 6. Apache Tika bóc tách text
             String extractedText = documentParserService.extractText(file);
 
+            // Tự động nhận diện ngôn ngữ của tài liệu
+            String detectedLanguage = LanguageDetectorHelper.detectLanguage(extractedText);
+            material.setLanguage(detectedLanguage);
+
             // 7. Băm nhỏ thành Chunks
             List<String> chunks = textChunkingService.chunkText(extractedText);
             if (chunks.isEmpty()) {
@@ -140,7 +146,8 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
             // 10. Hoàn tất xử lý
             material.setProcessingStatus("READY");
             material = learningMaterialRepository.save(material);
-            log.info("Xử lý RAG thành công cho Material id={}, tổng cộng {} chunks", material.getId(), chunks.size());
+            log.info("Xử lý RAG thành công cho Material id={}, ngôn ngữ={}, tổng cộng {} chunks",
+                    material.getId(), material.getLanguage(), chunks.size());
 
             return MaterialUploadResponse.builder()
                     .id(material.getId())
@@ -151,6 +158,7 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
                     .fileName(material.getFileName())
                     .storagePath(material.getStoragePath())
                     .mimeType(material.getMimeType())
+                    .language(material.getLanguage())
                     .totalChunks(chunks.size())
                     .processingStatus("READY")
                     .uploadedBy(currentUser.getFullName() != null ? currentUser.getFullName() : currentUser.getUsername())
@@ -261,12 +269,12 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
     }
 
     /**
-     * Cập nhật tiêu đề tài liệu:
+     * Cập nhật tiêu đề và/hoặc ngôn ngữ tài liệu:
      * - Chỉ ADMIN mới có quyền chỉnh sửa tài liệu (không cho lecturer).
      * - Không cần kiểm tra isOwner (người upload).
      */
     @Transactional
-    public MaterialUploadResponse updateMaterialTitle(Long materialId, String newTitle) {
+    public MaterialUploadResponse updateMaterial(Long materialId, MaterialUpdateRequest request) {
         User currentUser = subjectAccessHelper.getCurrentActor();
         if (!subjectAccessHelper.isAdmin(currentUser)) {
             throw new AppException(ErrorCode.UNAUTHORIZED, "Chỉ quản trị viên (ADMIN) mới có quyền chỉnh sửa tài liệu");
@@ -275,13 +283,24 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
         LearningMaterial material = learningMaterialRepository.findById(materialId)
                 .orElseThrow(() -> new AppException(ErrorCode.MATERIAL_NOT_EXISTED));
 
-        if (newTitle == null || newTitle.isBlank()) {
-            throw new AppException(ErrorCode.INVALID_REQUEST);
+        boolean hasTitle = request != null && request.getTitle() != null && !request.getTitle().isBlank();
+        boolean hasLanguage = request != null && request.getLanguage() != null && !request.getLanguage().isBlank();
+
+        if (!hasTitle && !hasLanguage) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Cần cung cấp tiêu đề hoặc ngôn ngữ để cập nhật");
         }
 
-        material.setTitle(newTitle.trim());
+        if (hasTitle) {
+            material.setTitle(request.getTitle().trim());
+        }
+
+        if (hasLanguage) {
+            material.setLanguage(request.getLanguage().trim().toLowerCase(java.util.Locale.ROOT));
+        }
+
         material = learningMaterialRepository.save(material);
-        log.info("Cập nhật tiêu đề Material id={} thành '{}'", materialId, material.getTitle());
+        log.info("Cập nhật Material id={} thành công: title='{}', language='{}'",
+                materialId, material.getTitle(), material.getLanguage());
 
         Subject subject = material.getSubject();
         return MaterialUploadResponse.builder()
@@ -293,10 +312,16 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
                 .fileName(material.getFileName())
                 .storagePath(material.getStoragePath())
                 .mimeType(material.getMimeType())
+                .language(material.getLanguage())
                 .processingStatus(material.getProcessingStatus())
                 .uploadedBy(material.getUploadedBy() != null ? material.getUploadedBy().getFullName() : null)
                 .createdAt(material.getCreatedAt())
                 .build();
+    }
+
+    @Transactional
+    public MaterialUploadResponse updateMaterialTitle(Long materialId, String newTitle) {
+        return updateMaterial(materialId, MaterialUpdateRequest.builder().title(newTitle).build());
     }
 
     /** Đọc tài liệu trong môn được phân công; admin được đọc mọi môn, không giới hạn người upload. */
@@ -315,6 +340,7 @@ public class LearningMaterialServiceImpl implements LearningMaterialService {
                         .fileName(m.getFileName())
                         .storagePath(m.getStoragePath())
                         .mimeType(m.getMimeType())
+                        .language(m.getLanguage())
                         .processingStatus(m.getProcessingStatus())
                         .uploadedBy(m.getUploadedBy() != null ? m.getUploadedBy().getFullName() : null)
                         .createdAt(m.getCreatedAt())

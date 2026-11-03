@@ -51,6 +51,12 @@ public class QuestionSearchRequest {
     private Long createdById;
 
     /**
+     * Lọc theo ngôn ngữ câu hỏi ('vi' hoặc 'en').
+     */
+    @Pattern(regexp = "^(?i)(vi|en)?$", message = "Ngôn ngữ lọc chỉ chấp nhận 'vi' hoặc 'en'")
+    private String language;
+
+    /**
      * Chọn câu lưu trữ; mặc định chỉ trả câu đang hoạt động.
      */
     private boolean archived;

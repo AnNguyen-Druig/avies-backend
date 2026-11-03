@@ -66,14 +66,27 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             BloomLevel bloomLevel,
             int count
     ) {
+        return generateQuestions(subjectName, keyword, contextText, bloomLevel, count, "vi");
+    }
+
+    @Override
+    public List<GeneratedQuestionDto> generateQuestions(
+            String subjectName,
+            String keyword,
+            String contextText,
+            BloomLevel bloomLevel,
+            int count,
+            String language
+    ) {
         int targetCount = Math.max(1, Math.min(count, 10));
+        String targetLang = isEnglish(language) ? "en" : "vi";
 
         // 1. Nếu có OpenAI API key hợp lệ -> gọi OpenAI GPT-4o
         if (isValidApiKey(openAiApiKey)) {
             try {
-                log.info("Gọi OpenAI Chat Completion (model={}) để sinh {} câu hỏi cho keyword '{}'",
-                        openAiChatModel, targetCount, keyword);
-                return callOpenAiChatCompletion(subjectName, keyword, contextText, bloomLevel, targetCount);
+                log.info("Gọi OpenAI Chat Completion (model={}, lang={}) để sinh {} câu hỏi cho keyword '{}'",
+                        openAiChatModel, targetLang, targetCount, keyword);
+                return callOpenAiChatCompletion(subjectName, keyword, contextText, bloomLevel, targetCount, targetLang);
             } catch (Exception e) {
                 log.error("Lỗi khi gọi OpenAI API: {}. Đang kiểm tra Gemini hoặc fallback.", e.getMessage(), e);
             }
@@ -82,9 +95,9 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
         // 2. Nếu có Gemini API key -> gọi Gemini API
         if (isValidApiKey(geminiApiKey)) {
             try {
-                log.info("Gọi Google Gemini API (model={}) để sinh {} câu hỏi cho keyword '{}'",
-                        geminiModel, targetCount, keyword);
-                return callGeminiApi(subjectName, keyword, contextText, bloomLevel, targetCount);
+                log.info("Gọi Google Gemini API (model={}, lang={}) để sinh {} câu hỏi cho keyword '{}'",
+                        geminiModel, targetLang, targetCount, keyword);
+                return callGeminiApi(subjectName, keyword, contextText, bloomLevel, targetCount, targetLang);
             } catch (Exception e) {
                 log.error("Lỗi khi gọi Gemini API: {}. Chuyển sang fallback.", e.getMessage(), e);
             }
@@ -94,6 +107,10 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
         log.error("Không có API key OpenAI/Gemini hợp lệ hoặc các dịch vụ AI đều gọi thất bại.");
         throw new AppException(ErrorCode.AI_GENERATION_FAILED,
                 "Không thể kết nối hoặc gọi dịch vụ AI để sinh câu hỏi lúc này (vui lòng kiểm tra cấu hình API key hoặc thực hiện lại quá trình tạo câu hỏi).");
+    }
+
+    private boolean isEnglish(String language) {
+        return language != null && (language.equalsIgnoreCase("en") || language.equalsIgnoreCase("english"));
     }
 
     private boolean isValidApiKey(String key) {
@@ -110,16 +127,20 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             String keyword,
             String contextText,
             BloomLevel bloomLevel,
-            int count
+            int count,
+            String language
     ) {
         String url = openAiBaseUrl.endsWith("/") ? openAiBaseUrl + "chat/completions" : openAiBaseUrl + "/chat/completions";
 
-        String prompt = buildPrompt(subjectName, keyword, contextText, bloomLevel, count);
+        String prompt = buildPrompt(subjectName, keyword, contextText, bloomLevel, count, language);
+        String systemInstruction = isEnglish(language)
+                ? "You are an expert university professor creating oral examination questions. Always return output strictly in the requested JSON format."
+                : "Bạn là chuyên gia giảng viên biên soạn đề thi vấn đáp đại học. Hãy luôn trả kết quả đúng định dạng JSON được yêu cầu.";
 
         Map<String, Object> requestBody = Map.of(
                 "model", openAiChatModel,
                 "messages", List.of(
-                        Map.of("role", "system", "content", "Bạn là chuyên gia giảng viên biên soạn đề thi vấn đáp đại học. Hãy luôn trả kết quả đúng định dạng JSON được yêu cầu."),
+                        Map.of("role", "system", "content", systemInstruction),
                         Map.of("role", "user", "content", prompt)
                 ),
                 "response_format", Map.of("type", "json_object"),
@@ -145,12 +166,13 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             String keyword,
             String contextText,
             BloomLevel bloomLevel,
-            int count
+            int count,
+            String language
     ) {
         String url = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel
                 + ":generateContent?key=" + geminiApiKey.trim();
 
-        String prompt = buildPrompt(subjectName, keyword, contextText, bloomLevel, count);
+        String prompt = buildPrompt(subjectName, keyword, contextText, bloomLevel, count, language);
 
         Map<String, Object> requestBody = Map.of(
                 "contents", List.of(
@@ -173,7 +195,59 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
         return parseGeminiResponse(rawResponse, bloomLevel, count);
     }
 
-    private String buildPrompt(String subjectName, String keyword, String contextText, BloomLevel bloomLevel, int count) {
+    private String buildPrompt(String subjectName, String keyword, String contextText, BloomLevel bloomLevel, int count, String language) {
+        if (isEnglish(language)) {
+            return buildEnglishPrompt(subjectName, keyword, contextText, bloomLevel, count);
+        }
+        return buildVietnamesePrompt(subjectName, keyword, contextText, bloomLevel, count);
+    }
+
+    private String buildEnglishPrompt(String subjectName, String keyword, String contextText, BloomLevel bloomLevel, int count) {
+        String bloomConstraint = (bloomLevel != null)
+                ? "All questions must strictly be at Bloom's taxonomy level: " + bloomLevel.name() + "."
+                : "Assign appropriate Bloom's taxonomy levels (REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE, or CREATE) to each question based on its cognitive complexity.";
+
+        return """
+                You are a university professor in charge of the course '%s'.
+                Generate exactly %d viva/oral exam questions with reference answers based on the study materials provided below.
+                
+                Keyword / Topic requested: '%s'
+                Bloom Cognitive Level: %s
+                
+                --- START CONTEXT (STUDY MATERIALS) ---
+                %s
+                --- END CONTEXT ---
+                
+                MANDATORY RULES:
+                1. Language: All question contents, reference answers, and topics MUST be written in ENGLISH.
+                2. Question content (content): Grounded directly and accurately in the provided context above. Suitable for oral/viva exams.
+                3. Reference answer (referenceAnswer): Provide comprehensive key points so the examiner can evaluate student responses accurately.
+                4. Bloom level (bloomLevel): Exactly one of: 'REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE', 'CREATE'.
+                5. Topic list (topics): 1 to 3 relevant concise keywords/labels in English.
+                6. Answer time limit (answerTimeLimitSeconds): Between 60 and 300 seconds (e.g. 120, 180).
+                
+                Return ONLY a single valid JSON object strictly matching this structure:
+                {
+                  "questions": [
+                    {
+                      "content": "Oral exam question text in English...",
+                      "referenceAnswer": "Outline of key points for grading in English...",
+                      "bloomLevel": "UNDERSTAND",
+                      "topics": ["Topic A", "Topic B"],
+                      "answerTimeLimitSeconds": 120
+                    }
+                  ]
+                }
+                """.formatted(
+                subjectName != null ? subjectName : "Major Course",
+                count,
+                keyword != null ? keyword : "General Knowledge",
+                bloomConstraint,
+                (contextText != null && !contextText.isBlank()) ? contextText : "No additional context."
+        );
+    }
+
+    private String buildVietnamesePrompt(String subjectName, String keyword, String contextText, BloomLevel bloomLevel, int count) {
         String bloomConstraint = (bloomLevel != null)
                 ? "Tất cả các câu hỏi bắt buộc phải thuộc mức nhận thức Bloom: " + bloomLevel.name() + "."
                 : "Hãy phân bổ mức nhận thức Bloom phù hợp (REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE hoặc CREATE) cho từng câu hỏi dựa trên độ phức tạp.";
@@ -190,11 +264,12 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                 --- KẾT THÚC NGỮ CẢNH TÀI LIỆU ---
                 
                 QUY TẮC BẮT BUỘC:
-                1. Nội dung câu hỏi (content): Bám sát và phản ánh chính xác kiến thức trong ngữ cảnh tài liệu ở trên.
-                2. Đáp án tham khảo (referenceAnswer): Đầy đủ các ý chính để giảng viên dùng làm căn cứ hỏi thi và đối chiếu câu trả lời.
-                3. Mức độ Bloom (bloomLevel): Chỉ chấp nhận một trong 6 giá trị: 'REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE', 'CREATE'.
-                4. Danh sách chủ đề (topics): Gồm 1-3 từ khóa/nhãn liên quan.
-                5. Thời gian trả lời (answerTimeLimitSeconds): Từ 60 đến 300 giây (ví dụ 120, 180).
+                1. Ngôn ngữ: Toàn bộ nội dung câu hỏi, đáp án tham khảo và danh sách chủ đề (topics) BẮT BUỘC viết bằng TIẾNG VIỆT.
+                2. Nội dung câu hỏi (content): Bám sát và phản ánh chính xác kiến thức trong ngữ cảnh tài liệu ở trên. Phù hợp cho thi vấn đáp.
+                3. Đáp án tham khảo (referenceAnswer): Đầy đủ các ý chính để giảng viên dùng làm căn cứ hỏi thi và đối chiếu câu trả lời.
+                4. Mức độ Bloom (bloomLevel): Chỉ chấp nhận một trong 6 giá trị: 'REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE', 'CREATE'.
+                5. Danh sách chủ đề (topics): Gồm 1-3 từ khóa/nhãn liên quan bằng tiếng Việt.
+                6. Thời gian trả lời (answerTimeLimitSeconds): Từ 60 đến 300 giây (ví dụ 120, 180).
                 
                 Trả về DUY NHẤT một đối tượng JSON có cấu trúc chính xác như sau:
                 {

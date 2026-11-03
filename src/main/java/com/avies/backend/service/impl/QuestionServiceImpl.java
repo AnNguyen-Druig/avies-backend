@@ -10,6 +10,7 @@ import com.avies.backend.repository.*;
 import com.avies.backend.service.QuestionGenerationService;
 import com.avies.backend.service.EmbeddingService;
 import com.avies.backend.service.QuestionService;
+import com.avies.backend.service.support.LanguageDetectorHelper;
 import com.avies.backend.service.support.SubjectAccessHelper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -91,6 +92,9 @@ public class QuestionServiceImpl implements QuestionService {
         User actor = subjectAccessHelper.getCurrentActor();
         Subject subject = subjectAccessHelper.requireAssignmentAndGetSubject(actor, request.getSubjectId());
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        String lang = (request.getLanguage() != null && !request.getLanguage().isBlank())
+                ? request.getLanguage().trim().toLowerCase(Locale.ROOT)
+                : LanguageDetectorHelper.detectLanguage(request.getContent());
         Question question = Question.builder()
                 .subject(subject).createdBy(actor).updatedBy(actor)
                 .content(requiredContent(request.getContent()))
@@ -98,6 +102,7 @@ public class QuestionServiceImpl implements QuestionService {
                 .topics(normalizeTopics(request.getTopics()))
                 .bloomLevel(request.getBloomLevel())
                 .answerTimeLimitSeconds(request.getAnswerTimeLimitSeconds())
+                .language(lang)
                 .sourceType(QuestionSourceType.MANUAL).status(QuestionStatus.DRAFT)
                 .isAiGenerated(false).isApproved(false).createdAt(now).updatedAt(now).build();
         questionRepository.saveAndFlush(question);
@@ -154,9 +159,13 @@ public class QuestionServiceImpl implements QuestionService {
         Set<String> topics = request.isTopicsPresent() ? normalizeTopics(request.getTopics()) : question.getTopics();
         BloomLevel bloom = request.isBloomLevelPresent() ? request.getBloomLevel() : question.getBloomLevel();
         Integer seconds = request.isAnswerTimeLimitSecondsPresent() ? request.getAnswerTimeLimitSeconds() : question.getAnswerTimeLimitSeconds();
+        String lang = (request.isLanguagePresent() && request.getLanguage() != null && !request.getLanguage().isBlank())
+                ? request.getLanguage().trim().toLowerCase(Locale.ROOT)
+                : question.getLanguage();
         if (Objects.equals(content, question.getContent()) && Objects.equals(answer, question.getReferenceAnswer())
                 && topics.equals(question.getTopics()) && bloom == question.getBloomLevel()
-                && Objects.equals(seconds, question.getAnswerTimeLimitSeconds())) {
+                && Objects.equals(seconds, question.getAnswerTimeLimitSeconds())
+                && Objects.equals(lang, question.getLanguage())) {
             return toResponse(question);
         }
         question.setContent(content);
@@ -167,6 +176,7 @@ public class QuestionServiceImpl implements QuestionService {
         }
         question.setBloomLevel(bloom);
         question.setAnswerTimeLimitSeconds(seconds);
+        question.setLanguage(lang);
         question.setUpdatedBy(actor);
         question.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         questionRepository.flush();
@@ -297,8 +307,11 @@ public class QuestionServiceImpl implements QuestionService {
             throw new AppException(ErrorCode.NO_RELEVANT_MATERIALS, "Không tìm thấy tài liệu phù hợp trong môn học để sinh câu hỏi.");
         }
 
-        // 3. Ghép context từ 5 đoạn tài liệu
+        // 3. Ghép context từ 5 đoạn tài liệu và xác định ngôn ngữ tài liệu
         StringBuilder contextBuilder = new StringBuilder();
+        StringBuilder rawChunksText = new StringBuilder();
+        String detectedMaterialLang = null;
+
         for (int i = 0; i < chunks.size(); i++) {
             LearningMaterialChunkRepository.ChunkView chunk = chunks.get(i);
             String docTitle = (chunk.getMaterialTitle() != null && !chunk.getMaterialTitle().isBlank())
@@ -306,15 +319,31 @@ public class QuestionServiceImpl implements QuestionService {
                     : "Tài liệu môn học";
             contextBuilder.append(String.format("--- Đoạn %d (Tài liệu: %s) ---\n%s\n\n",
                     i + 1, docTitle, chunk.getContent()));
+            rawChunksText.append(chunk.getContent()).append("\n");
+
+            if (detectedMaterialLang == null && chunk.getMaterialLanguage() != null && !chunk.getMaterialLanguage().isBlank()) {
+                detectedMaterialLang = chunk.getMaterialLanguage().trim().toLowerCase(Locale.ROOT);
+            }
         }
 
-        // 4. Gọi AI sinh câu hỏi và rubric
+        // Xác định ngôn ngữ mục tiêu: nếu không truyền hoặc 'AUTO' -> tự động nhận diện từ tài liệu
+        String targetLanguage;
+        if (request.getLanguage() != null && !request.getLanguage().isBlank() && !"AUTO".equalsIgnoreCase(request.getLanguage().trim())) {
+            targetLanguage = request.getLanguage().trim().toLowerCase(Locale.ROOT);
+        } else if (detectedMaterialLang != null) {
+            targetLanguage = detectedMaterialLang;
+        } else {
+            targetLanguage = LanguageDetectorHelper.detectLanguage(rawChunksText.toString());
+        }
+
+        // 4. Gọi AI sinh câu hỏi và rubric theo ngôn ngữ mục tiêu
         List<GeneratedQuestionDto> generatedDtos = aiQuestionGenerationService.generateQuestions(
                 subject.getName(),
                 keyword,
                 contextBuilder.toString(),
                 request.getBloomLevel(),
-                count
+                count,
+                targetLanguage
         );
 
         if (generatedDtos == null || generatedDtos.isEmpty()) {
@@ -352,6 +381,7 @@ public class QuestionServiceImpl implements QuestionService {
                     .topics(normalizedTopics)
                     .bloomLevel(bloom)
                     .answerTimeLimitSeconds(timeLimit)
+                    .language(targetLanguage)
                     .sourceType(QuestionSourceType.AI)
                     .status(QuestionStatus.DRAFT)
                     .isAiGenerated(true)
@@ -413,7 +443,8 @@ public class QuestionServiceImpl implements QuestionService {
                 .content(question.getContent()).referenceAnswer(question.getReferenceAnswer())
                 .topics(new TreeSet<>(question.getTopics())).bloomLevel(question.getBloomLevel())
                 .answerTimeLimitSeconds(question.getAnswerTimeLimitSeconds()).sourceType(question.getSourceType())
-                .status(question.getStatus()).createdById(question.getCreatedBy().getId())
+                .status(question.getStatus()).language(question.getLanguage() != null ? question.getLanguage() : "vi")
+                .createdById(question.getCreatedBy().getId())
                 .createdByName(question.getCreatedBy().getFullName())
                 .updatedById(question.getUpdatedBy() == null ? null : question.getUpdatedBy().getId())
                 .createdAt(question.getCreatedAt()).updatedAt(question.getUpdatedAt())
@@ -432,6 +463,7 @@ public class QuestionServiceImpl implements QuestionService {
                 .subjectId(question.getSubject().getId()).subjectName(question.getSubject().getName())
                 .contentPreview(content.substring(0, length)).topics(new TreeSet<>(question.getTopics()))
                 .bloomLevel(question.getBloomLevel()).sourceType(question.getSourceType()).status(question.getStatus())
+                .language(question.getLanguage() != null ? question.getLanguage() : "vi")
                 .createdById(question.getCreatedBy().getId()).createdByName(question.getCreatedBy().getFullName())
                 .createdAt(question.getCreatedAt()).archivedAt(question.getArchivedAt())
                 .hasRubric(false).build();
