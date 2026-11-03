@@ -80,6 +80,7 @@ public class QuestionPostgresConfig {
                     .getContentAsString(StandardCharsets.UTF_8));
             execute(connection, migration());
             execute(connection, Files.readString(projectFile("docs/migrations/20261022_rubric_subject_migration.sql"), StandardCharsets.UTF_8));
+            execute(connection, Files.readString(projectFile("docs/migrations/20261102_question_language.sql"), StandardCharsets.UTF_8));
         }
         return source;
     }

@@ -275,7 +275,7 @@ class OralExamPostgresIT {
     @Test void aggregateReadAndSaveUseTwoDatabaseCommandsWithoutLosingEvidence() {
         open(); listen(); command(OralExamAction.SUBMIT); var job=state.submissionId(); attachFixture(job);
         providerTranscript(job,"Câu trả lời STT thật fixture");
-        var counted=new OralJdbcCounter(source); var repo=new com.avies.backend.repository.OralExamRepository(counted);
+        var counted=new OralJdbcCounter(source); var repo=new com.avies.backend.repository.impl.OralExamRepositoryImpl(counted);
         repo.findSnapshot(exam).orElseThrow();
         var tx=new TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(counted));
         tx.executeWithoutResult(status -> {

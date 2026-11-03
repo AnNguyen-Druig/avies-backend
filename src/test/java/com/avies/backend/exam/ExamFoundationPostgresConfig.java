@@ -78,6 +78,7 @@ public class ExamFoundationPostgresConfig {
         execute(connection, projectSql("docs/migrations/20261022_rubric_subject_migration.sql"));
         execute(connection, projectSql("docs/migrations/20261022_update_bloom_level_constraint.sql"));
         execute(connection, projectSql("docs/migrations/20261025_feature2_exam_snapshots.sql"));
+        execute(connection, projectSql("docs/migrations/20261102_question_language.sql"));
     }
 
     /** Gửi nguyên script để PostgreSQL xử lý đúng transaction và khối DO. */

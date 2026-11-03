@@ -1,4 +1,4 @@
-package com.avies.backend.repository;
+package com.avies.backend.service.specifications;
 
 import com.avies.backend.dto.request.QuestionSearchRequest;
 import com.avies.backend.entity.*;

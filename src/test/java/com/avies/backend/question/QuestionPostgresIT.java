@@ -262,16 +262,20 @@ class QuestionPostgresIT {
     void verifiesMigrationMetadataAndDatabaseConstraints() throws Exception {
         assertThat(jdbc.queryForObject("""
                 SELECT count(*) FROM information_schema.columns WHERE table_schema='aives' AND table_name='questions'
-                """, Long.class)).isEqualTo(16L);
+                """, Long.class)).isEqualTo(17L);
         assertThat(jdbc.queryForObject("""
                 SELECT count(*) FROM pg_constraint WHERE conrelid='aives.questions'::regclass
-                AND conname IN ('ck_question_bloom_mvp','ck_question_answer_seconds','ck_question_source','ck_question_status','ck_question_version')
-                """, Long.class)).isEqualTo(5L);
+                AND conname IN ('ck_question_bloom_mvp','ck_question_answer_seconds','ck_question_source','ck_question_status','ck_question_version','ck_questions_language')
+                """, Long.class)).isEqualTo(6L);
         assertThat(jdbc.queryForObject("""
                 SELECT count(*) FROM pg_indexes WHERE schemaname='aives' AND indexname IN
-                ('uq_question_topics_normalized','idx_assignment_subject','idx_question_audit_question','idx_question_subject_status','idx_question_creator')
-                """, Long.class)).isEqualTo(5L);
+                ('uq_question_topics_normalized','idx_assignment_subject','idx_question_audit_question','idx_question_subject_status','idx_question_creator','idx_questions_language')
+                """, Long.class)).isEqualTo(6L);
         long id = create(login("owner"));
+        assertThat(jdbc.queryForObject("SELECT language FROM aives.questions WHERE id=?", String.class, id)).isEqualTo("vi");
+        assertThat(jdbc.update("UPDATE aives.questions SET language='en' WHERE id=?", id)).isEqualTo(1);
+        assertSqlState("23514", "UPDATE aives.questions SET language='fr' WHERE id=" + id);
+        assertSqlState("23502", "UPDATE aives.questions SET language=NULL WHERE id=" + id);
         assertSqlState("23514", "UPDATE aives.questions SET bloom_level='CREATE' WHERE id=" + id);
         assertSqlState("23514", "UPDATE aives.questions SET answer_time_limit_seconds=0 WHERE id=" + id);
         assertSqlState("23514", "UPDATE aives.questions SET source_type='OTHER' WHERE id=" + id);
@@ -408,7 +412,7 @@ class QuestionPostgresIT {
                     QuestionPostgresConfig.projectFile("docs/database/AIVES_DB_POSTGRESQL_FINAL.sql"), StandardCharsets.UTF_8));
             try (var rows = connection.createStatement().executeQuery("SELECT count(*) FROM information_schema.columns WHERE table_schema='aives' AND table_name='questions'")) {
                 assertThat(rows.next()).isTrue();
-                assertThat(rows.getInt(1)).isEqualTo(16);
+                assertThat(rows.getInt(1)).isEqualTo(17);
             }
             try (var rows = connection.createStatement().executeQuery("SELECT count(*) FROM pg_tables WHERE schemaname='aives' AND rowsecurity AND tablename IN ('question_topics','lecturer_subject_assignments','question_audit_logs')")) {
                 assertThat(rows.next()).isTrue();
