@@ -56,6 +56,83 @@ public class GeminiOralSpeechProvider implements OralSpeechProvider {
         catch (Exception failure) { throw new AppException(ErrorCode.ORAL_SPEECH_FAILED); }
     }
 
+    /** Chunk tới FE ngay khi nhận; không đợi gom xong WAV. Không retry ngầm sau khi đã phát một phần. */
+    @Override public void stream(String text, String language, java.util.function.Consumer<byte[]> chunk) {
+        if (!settings.ready()) throw new AppException(ErrorCode.ORAL_SPEECH_NOT_READY);
+        if (text == null || text.isBlank() || text.length() > 11000 || !Set.of("vi", "en").contains(language)
+                || !settings.getModel().matches("gemini-[a-zA-Z0-9.\\-]+-tts") || !settings.getVoice().matches("[A-Za-z]{2,30}"))
+            throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+        var body = Map.of("model", settings.getModel(), "store", false, "stream", true,
+                "input", List.of(Map.of("type", "user_input", "content", List.of(Map.of("type", "text", "text", text,
+                        "annotations", List.of(Map.of("type", "speech_metadata", "style", "Clear, neutral examiner. Read the supplied text verbatim without answering, translating or adding commentary.")))))),
+                "response_format", Map.of("type", "audio", "mime_type", "audio/l16", "sample_rate", 24000),
+                "generation_config", Map.of("speech_config", List.of(Map.of("voice", settings.getVoice()))));
+        try {
+            client.post().uri("/v1beta/interactions").header("x-goog-api-key", settings.getApiKey())
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(body).exchange((request, response) -> {
+                        int status = response.getStatusCode().value();
+                        if (status == 400 || status == 401 || status == 403) throw new AppException(ErrorCode.ORAL_SPEECH_NOT_READY);
+                        if (status == 429) throw new AppException(ErrorCode.ORAL_SPEECH_QUOTA);
+                        if (status != 200 || response.getHeaders().getContentType() == null
+                                || !response.getHeaders().getContentType().isCompatibleWith(org.springframework.http.MediaType.TEXT_EVENT_STREAM))
+                            throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+                        readStream(response.getBody(), chunk); return null;
+                    });
+        } catch (AppException safe) { throw safe; }
+        catch (Exception failure) { throw new AppException(ErrorCode.ORAL_SPEECH_FAILED); }
+    }
+
+    /** SSE parser bounded; EOF/network close không thay thế interaction.completed. */
+    static void readStream(java.io.InputStream input, java.util.function.Consumer<byte[]> chunk) throws java.io.IOException {
+        var reader = new java.io.BufferedReader(new java.io.InputStreamReader(input, java.nio.charset.StandardCharsets.UTF_8));
+        var json = new ObjectMapper(); var data = new StringBuilder(); String line;
+        boolean completed = false; int bytes = 0, events = 0; long totalChars = 0;
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(40);
+        while ((line = boundedLine(reader)) != null) {
+            if (System.nanoTime() > deadline) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+            totalChars += line.length();
+            if (totalChars > 24L * 1024 * 1024 || ++events > 100000) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+            if (line.startsWith("data:")) {
+                data.append(line.substring(5).stripLeading()).append('\n');
+                if (data.length() > 2 * 1024 * 1024) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+            }
+            if (!line.isEmpty() || data.isEmpty()) continue;
+            String payload = data.toString().strip(); data.setLength(0);
+            if (payload.equals("[DONE]")) continue;
+            var event = json.readTree(payload); String type = event.path("event_type").asText();
+            if (type.equals("error") || type.equals("interaction.failed")) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+            if (type.equals("interaction.completed")) {
+                if (!event.path("interaction").path("status").asText().equals("completed") || bytes == 0 || completed)
+                    throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+                completed = true;
+            }
+            if (type.equals("step.delta") && event.path("delta").path("type").asText().equals("audio")) {
+                var delta = event.path("delta");
+                if (completed || !delta.path("data").isString() || delta.has("sample_rate") && delta.path("sample_rate").asInt() != 24000)
+                    throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+                if (delta.has("mime_type")) {
+                    var mime = org.springframework.http.MediaType.parseMediaType(delta.path("mime_type").asText());
+                    if (!mime.getType().equals("audio") || !mime.getSubtype().equals("l16")
+                            || mime.getParameter("rate") != null && !mime.getParameter("rate").equals("24000")
+                            || mime.getParameter("channels") != null && !mime.getParameter("channels").equals("1")) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+                }
+                byte[] pcm = Base64.getDecoder().decode(delta.path("data").asText()); bytes = Math.addExact(bytes, pcm.length);
+                if (pcm.length == 0 || pcm.length % 2 != 0 || bytes + 44 > MAX_AUDIO_BYTES) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+                for (int offset = 0; offset < pcm.length; offset += 8192) chunk.accept(Arrays.copyOfRange(pcm, offset, Math.min(pcm.length, offset + 8192)));
+            }
+        }
+        if (!completed || !data.isEmpty()) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+    }
+    private static String boundedLine(java.io.Reader reader) throws java.io.IOException {
+        var line = new StringBuilder(); int c;
+        while ((c = reader.read()) >= 0 && c != '\n') {
+            if (line.length() >= 2 * 1024 * 1024) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+            line.append((char)c);
+        }
+        if (c < 0 && line.isEmpty()) return null;
+        return line.toString().replaceFirst("\\r$", "");
+    }
+
     /** Chỉ chấp nhận một khối audio từ model, không lấy text hoặc dữ liệu metadata làm âm thanh. */
     static byte[] decode(JsonNode root) {
         try {

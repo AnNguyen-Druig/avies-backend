@@ -58,6 +58,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(HttpMethod.GET, PUBLIC_GET_ENDPOINTS).permitAll()
                 .requestMatchers(HttpMethod.POST, PUBLIC_POST_ENDPOINTS).permitAll()
+                // Browser WS không gửi được bearer header. Handler bắt buộc AUTH frame/JWT trước mọi thao tác.
+                .requestMatchers(HttpMethod.GET, "/student-exams/*/oral-examination/stream").permitAll()
                 .anyRequest().authenticated()
         );
 

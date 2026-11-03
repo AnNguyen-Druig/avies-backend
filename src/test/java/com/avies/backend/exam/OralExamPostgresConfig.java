@@ -26,5 +26,8 @@ import org.springframework.context.annotation.Import;
         com.avies.backend.service.impl.OralTranscriptionServiceImpl.class,
         com.avies.backend.service.impl.GroqOralTranscriptionProvider.class,
         com.avies.backend.config.OralDecisionProperties.class,
+        com.avies.backend.controller.OralExamEventsController.class,
+        com.avies.backend.service.support.OralProgressEvents.class,
+        com.avies.backend.config.OralEventsConfig.class,
         com.avies.backend.repository.OralDecisionRepository.class})
 public class OralExamPostgresConfig { }

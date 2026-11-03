@@ -33,6 +33,12 @@
         <argLine></argLine>
     </properties>
     <dependencies>
+        <!-- STT streaming: SDK Java chính thức, cố định phiên bản và chỉ gọi khi được bật. -->
+        <dependency>
+            <groupId>com.microsoft.cognitiveservices.speech</groupId>
+            <artifactId>client-sdk</artifactId>
+            <version>1.51.0</version>
+        </dependency>
         <!-- PostgreSQL tạm do Docker quản lý, không lấy URL từ cấu hình ứng dụng. -->
         <dependency>
             <groupId>org.testcontainers</groupId>

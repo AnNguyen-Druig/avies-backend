@@ -43,9 +43,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @org.springframework.test.context.event.RecordApplicationEvents
+@org.springframework.context.annotation.Import({com.avies.backend.config.OralStreamingConfig.class,
+        com.avies.backend.controller.OralAudioWebSocket.class, com.avies.backend.config.AzureSpeechSttProperties.class,
+        com.avies.backend.service.impl.AzureSpeechStreamingEngine.class, com.avies.backend.service.impl.AzureStreamingTranscriptionService.class,
+        com.avies.backend.config.AzureSpeechTtsProperties.class, com.avies.backend.service.impl.AzureOralSpeechProvider.class,
+        com.avies.backend.service.impl.FailoverOralSpeechProvider.class,
+        OralExamPostgresIT.StreamingValidation.class})
 class OralExamPostgresIT {
+    @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+    static class StreamingValidation {
+        @org.springframework.context.annotation.Bean
+        org.springframework.validation.beanvalidation.LocalValidatorFactoryBean streamingValidator() {
+            return new org.springframework.validation.beanvalidation.LocalValidatorFactoryBean();
+        }
+    }
     /** Chỉ quan sát tín hiệu nội bộ trong test, không khởi động worker hoặc provider thật. */
     @Autowired private org.springframework.test.context.event.ApplicationEvents events;
+    @Autowired private com.avies.backend.service.support.OralProgressEvents progressEvents;
     /** JWT giả trong test HTTP, quyền DB vẫn kiểm tra thật. */ @MockitoBean private CustomJwtDecoder decoder;
     /** Không đợi thời gian thực hoặc chỉnh đồng hồ hệ điều hành. */ @MockitoBean private Clock clock;
     /** Không gọi mạng AI khi kiểm thử HTTP/DB. */ @MockitoBean private OralSpeechProvider speechProvider;
@@ -98,6 +112,96 @@ class OralExamPostgresIT {
     }
     /** Không giữ danh tính test ngoài phạm vi từng ca. */
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
+
+    /** SSE mở bằng JWT, không lộ đề/transcript, chỉ báo thay đổi đã commit; rollback không phát progress. */
+    @Test void eventsNotifyOnlyCommittedChanges() throws Exception {
+        open(); listen(); long initial = state.revision();
+        var stream = mvc.perform(as(get(url()+"/events"), "student"))
+                .andExpect(status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("X-Accel-Buffering", "no"))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM)).andReturn();
+        assertThat(stream.getResponse().getContentAsString()).contains("event:ready", "\"revision\":"+initial)
+                .doesNotContain("PRIVATE", "transcript", "clientSessionId");
+        new TransactionTemplate(manager).executeWithoutResult(tx -> { command(OralExamAction.SUBMIT); tx.setRollbackOnly(); });
+        student(); state = service.get(exam); assertThat(state.revision()).isEqualTo(initial);
+        assertThat(stream.getResponse().getContentAsString()).doesNotContain("event:progress");
+        command(OralExamAction.SUBMIT);
+        for (int i=0; i<100 && !stream.getResponse().getContentAsString().contains("event:progress"); i++) Thread.sleep(10);
+        assertThat(stream.getResponse().getContentAsString()).contains("event:progress", "\"revision\":"+state.revision())
+                .doesNotContain("PRIVATE", "transcript", "clientSessionId");
+        at(fixture.base.start.plusSeconds(61)); progressEvents.heartbeat(); stream.getAsyncResult(5000);
+        mvc.perform(asyncDispatch(stream)).andExpect(status().isOk());
+    }
+
+    /** Kênh SSE không vượt quyền owner/role và không tự mở tiến trình chưa bắt đầu. */
+    @Test void eventsRequireCurrentStudentOwnershipAndExistingProgress() throws Exception {
+        mvc.perform(as(get(url()+"/events").accept(MediaType.TEXT_EVENT_STREAM), "student")).andExpect(status().isNotFound());
+        assertThat(count("oral_exam_progress")).isZero(); open();
+        mvc.perform(get(url()+"/events").with(jwt().jwt(token -> token.subject("student2")).authorities(new SimpleGrantedAuthority("ROLE_STUDENT"))))
+                .andExpect(status().isNotFound());
+        for (String actor : List.of("owner", "admin")) mvc.perform(as(get(url()+"/events"), actor)).andExpect(status().isForbidden());
+        mvc.perform(get(url()+"/events").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /** Text chỉ gồm prompt đã chốt, đọc lặp không gọi AI hoặc sửa ngân sách, lease, revision. */
+    @Test void questionTextReturnsOnlyCurrentSnapshotWithoutChangingProgress() throws Exception {
+        open(); listen(); var turn = state.currentTurnId();
+        jdbc.update("UPDATE aives.questions SET content='EDITED_BANK_PROMPT',reference_answer='EDITED_REFERENCE'");
+        var progress = jdbc.queryForList("SELECT * FROM aives.oral_exam_progress WHERE student_exam_id=?", exam);
+        var turns = jdbc.queryForList("SELECT * FROM aives.oral_exam_turns WHERE student_exam_id=? ORDER BY id", exam);
+        long commands = count("oral_exam_commands"); at(fixture.base.start.plusSeconds(5));
+        for (int i = 0; i < 2; i++) mvc.perform(as(get(url()+"/turns/"+turn+"/question-text"), "student"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.result.turnId").value(turn.toString()))
+                .andExpect(jsonPath("$.result.questionOrder").value(1)).andExpect(jsonPath("$.result.followUpIndex").value(0))
+                .andExpect(jsonPath("$.result.language").value("vi")).andExpect(jsonPath("$.result.text").value("PRIVATE_MAIN_PROMPT"))
+                .andExpect(jsonPath("$.result.*", org.hamcrest.Matchers.hasSize(5)))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("REFERENCE"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("PRIVATE_RUBRIC"))));
+        assertThat(jdbc.queryForList("SELECT * FROM aives.oral_exam_progress WHERE student_exam_id=?", exam)).isEqualTo(progress);
+        assertThat(jdbc.queryForList("SELECT * FROM aives.oral_exam_turns WHERE student_exam_id=? ORDER BY id", exam)).isEqualTo(turns);
+        assertThat(count("oral_exam_commands")).isEqualTo(commands); verifyNoInteractions(speechProvider, sttProvider);
+    }
+
+    /** Không mở text trước khi nghe xong, không dò turn, không đọc câu trước khi đã chuyển follow-up. */
+    @Test void questionTextRequiresFinishedAudioAndCurrentTurnIncludingFollowUps() throws Exception {
+        open(); var main = state.currentTurnId();
+        assertCode(() -> service.questionText(exam, main), 1801);
+        ready(); assertCode(() -> service.questionText(exam, main), 1801);
+        command(OralExamAction.PROMPT_FINISHED);
+        assertCode(() -> service.questionText(exam, UUID.randomUUID()), 1802);
+        assertThat(service.questionText(exam, main).text()).isEqualTo("PRIVATE_MAIN_PROMPT");
+        answer(true); var followUp = state.currentTurnId();
+        assertCode(() -> service.questionText(exam, main), 1802);
+        assertCode(() -> service.questionText(exam, followUp), 1801);
+        listen();
+        assertThat(service.questionText(exam, followUp).text()).isEqualTo("PRIVATE_FOLLOW_UP");
+        assertThat(service.questionText(exam, followUp).followUpIndex()).isEqualTo(1);
+        command(OralExamAction.PAUSE); assertCode(() -> service.questionText(exam, followUp), 1801);
+    }
+
+    /** JWT/owner vẫn được kiểm tra, kể cả khi biết đúng UUID của câu đang trả lời. */
+    @Test void questionTextRejectsOtherStudentsRolesAndAnonymousRequests() throws Exception {
+        open(); listen(); var path = url()+"/turns/"+state.currentTurnId()+"/question-text";
+        mvc.perform(get(path).with(jwt().jwt(token -> token.subject("student2")).authorities(new SimpleGrantedAuthority("ROLE_STUDENT"))))
+                .andExpect(status().isNotFound());
+        for (String actor : List.of("owner", "admin")) mvc.perform(as(get(path), actor)).andExpect(status().isForbidden());
+        mvc.perform(get(path).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /** Đúng hạn câu/slot và bài hoàn thành không được đọc lại prompt qua API này. */
+    @Test void questionTextRejectsExpiredBudgetDeadlineAndCompletedAttempt() {
+        open(); listen(); var turn = state.currentTurnId();
+        at(fixture.base.start.plusSeconds(90)); assertCode(() -> service.questionText(exam, turn), 1802);
+        at(state.deadline()); assertCode(() -> service.questionText(exam, turn), 1802);
+        at(fixture.base.start);
+        answer(false); listen(); answer(false);
+        assertThat(state.phase()).isEqualTo(OralExamPhase.COMPLETED);
+        assertCode(() -> service.questionText(exam, turn), 1802);
+    }
 
     /** Không gọi GET phòng thi: worker tự chốt đúng deadline, giữ transcript và trạng thái phiên. */
     @Test void expiryWorkerUpdatesAbandonedAttemptAtDeadlineAndPreservesEvidence() {
@@ -964,6 +1068,67 @@ class OralExamPostgresIT {
         mvc.perform(as(get(url()), "student")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.transcripts").isEmpty())
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("PRIVATE_MAIN_PROMPT"))));
+    }
+
+    @Test void ttsStreamingHttpUsesAuthenticatedContextAndConfirmsOnlyAfterEnd() throws Exception {
+        when(speechSettings.ready()).thenReturn(true); when(speechSettings.isStreamingEnabled()).thenReturn(true);
+        when(speechSettings.getModel()).thenReturn("fixture-stream-http-success");
+        doAnswer(call -> { java.util.function.Consumer<byte[]> sink = call.getArgument(2); sink.accept(new byte[]{1,0,2,0}); return null; })
+                .when(speechProvider).stream(anyString(), anyString(), any());
+        open();
+        String body = "{\"clientSessionId\":\""+client+"\",\"turnId\":\""+state.currentTurnId()+"\",\"expectedRevision\":"+state.revision()+"}";
+        var request = mvc.perform(as(post(url()+"/speech-stream").contentType(MediaType.APPLICATION_JSON).content(body),"student"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted()).andReturn();
+        String output = mvc.perform(asyncDispatch(request)).andExpect(status().isOk()).andExpect(content().contentTypeCompatibleWith("application/x-ndjson"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(output).contains("\"type\":\"audio\"", "\"type\":\"end\"").doesNotContain("PRIVATE_MAIN_PROMPT", "referenceAnswer", "rubric");
+        student(); assertThat(service.get(exam).phase()).isEqualTo(OralExamPhase.SPEAKING); assertThat(answerCount()).isZero();
+        verify(speechProvider, times(1)).stream(anyString(), eq("en"), any());
+    }
+
+    @Test void ttsStreamingFailureAfterFirstChunkCannotMarkPromptReady() throws Exception {
+        when(speechSettings.ready()).thenReturn(true); when(speechSettings.isStreamingEnabled()).thenReturn(true);
+        when(speechSettings.getModel()).thenReturn("fixture-stream-http-failure");
+        doAnswer(call -> { java.util.function.Consumer<byte[]> sink = call.getArgument(2); sink.accept(new byte[]{1,0});
+            throw new AppException(com.avies.backend.exception.ErrorCode.ORAL_SPEECH_QUOTA); }).when(speechProvider).stream(anyString(), anyString(), any());
+        open();
+        String body = "{\"clientSessionId\":\""+client+"\",\"turnId\":\""+state.currentTurnId()+"\",\"expectedRevision\":"+state.revision()+"}";
+        var request = mvc.perform(as(post(url()+"/speech-stream").contentType(MediaType.APPLICATION_JSON).content(body),"student"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted()).andReturn();
+        String output = mvc.perform(asyncDispatch(request)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(output).contains("\"type\":\"audio\"", "\"type\":\"error\"", "1809").doesNotContain("\"type\":\"end\"");
+        student(); assertThat(service.get(exam).phase()).isEqualTo(OralExamPhase.PREPARING); assertThat(answerCount()).isZero();
+    }
+
+    @Test void azureStreamCommitsAudioAndFinalAtomicallyAndCannotOverwriteSubmission() {
+        open(); listen();
+        var start = new OralSpeechRequest(client, state.currentTurnId(), state.revision());
+        assertThat(service.streamingLanguage(exam, start)).isEqualTo("vi");
+        assertCode(() -> service.streamingLanguage(exam, new OralSpeechRequest(UUID.randomUUID(), state.currentTurnId(), state.revision())), 1803);
+        var submit = request(OralExamAction.SUBMIT, null); state = service.execute(exam, submit); var job = state.submissionId();
+        var metadata = new OralAudioRequest(client, state.currentTurnId());
+        var payload = com.avies.backend.service.support.OralAudioPayload.detect(com.avies.backend.service.support.OralPcm.wav(new byte[3200], 16000));
+        state = service.completeStreamedAudio(exam, job, metadata, payload, "Final from trusted Azure transport");
+        assertThat(state.phase()).isEqualTo(OralExamPhase.DECIDING); assertThat(answerCount()).isEqualTo(1);
+        assertThat(audioRepository.candidates(audioStore.storageId())).isEmpty();
+        assertThat(audioStore.read(job, payload.sha256()).bytes()).isEqualTo(payload.bytes());
+        service.completeStreamedAudio(exam, job, metadata, payload, "Final from trusted Azure transport");
+        assertThat(answerCount()).isEqualTo(1);
+        byte[] altered = payload.bytes().clone(); altered[44] = 1;
+        assertCode(() -> service.completeStreamedAudio(exam, job, metadata, com.avies.backend.service.support.OralAudioPayload.detect(altered), "Overwrite"), 1814);
+        assertThat(jdbc.queryForObject("SELECT transcript_text FROM aives.oral_answer_submissions WHERE id=?", String.class, job)).isEqualTo("Final from trusted Azure transport");
+    }
+
+    @Test void invalidAzureFinalRollsBackAudioMetadataAndCannotBypassDeadline() {
+        open(); listen(); command(OralExamAction.SUBMIT); var job = state.submissionId();
+        var metadata = new OralAudioRequest(client, state.currentTurnId());
+        var payload = com.avies.backend.service.support.OralAudioPayload.detect(com.avies.backend.service.support.OralPcm.wav(new byte[3200], 16000));
+        assertCode(() -> service.completeStreamedAudio(exam, job, metadata, payload, "bad\0text"), 1805);
+        assertThat(jdbc.queryForObject("SELECT audio_sha256 FROM aives.oral_answer_submissions WHERE id=?", String.class, job)).isNull();
+        assertThat(answerCount()).isZero();
+        at(fixture.base.start.plusHours(2));
+        assertThatThrownBy(() -> service.completeStreamedAudio(exam, job, metadata, payload, "Too late")).isInstanceOf(AppException.class);
+        assertThat(answerCount()).isZero();
     }
 
     /** Mốc giờ giả không ảnh hưởng giờ máy hoặc datasource. */ private void at(OffsetDateTime time) { when(clock.instant()).thenReturn(time.toInstant()); }

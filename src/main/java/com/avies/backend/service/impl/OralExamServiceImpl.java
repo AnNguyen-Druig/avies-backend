@@ -100,6 +100,23 @@ public class OralExamServiceImpl implements OralExamService {
         });
     }
 
+    /** Đọc trên snapshot nhất quán, không giữ khóa ghi hoặc cấp lại ngân sách/lease khi mở text. */
+    @Override
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ, timeout = 10)
+    public com.avies.backend.dto.response.OralQuestionTextResponse questionText(Long examId, UUID turnId) {
+        return transaction(() -> {
+            var exam = access.readOwned(examId);
+            var p = repository.findSnapshot(examId).orElseThrow(() -> new AppException(ErrorCode.ORAL_PROGRESS_NOT_FOUND));
+            normalize(exam, p, now());
+            if (!Objects.equals(p.getCurrentTurnId(), turnId)) throw new AppException(ErrorCode.ORAL_STALE_COMMAND);
+            if (p.getPhase() != OralExamPhase.ANSWERING) throw new AppException(ErrorCode.ORAL_ACTION_NOT_ALLOWED);
+            var turn = coordinator.currentTurn(p);
+            if (!Boolean.TRUE.equals(turn.getPromptReady())) throw new AppException(ErrorCode.ORAL_ACTION_NOT_ALLOWED);
+            return new com.avies.backend.dto.response.OralQuestionTextResponse(turn.getId(), p.getCurrentQuestionOrder(),
+                    turn.getFollowUpIndex(), turn.getLanguage(), turn.getPromptText());
+        });
+    }
+
     /** Tác vụ nền chỉ chốt lượt IN_PROGRESS đã tới deadline; Finish thắng trước thì giữ nguyên COMPLETED. */
     @Override public boolean expireOverdue(Long examId) {
         return transaction(() -> {
@@ -207,8 +224,34 @@ public class OralExamServiceImpl implements OralExamService {
             throw new AppException(ErrorCode.ORAL_ACTION_NOT_ALLOWED);
     }
 
+    @Override @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ, timeout = 10)
+    public String streamingLanguage(Long examId, OralSpeechRequest request) {
+        return transaction(() -> {
+            var exam = access.readOwned(examId);
+            var p = repository.findSnapshot(examId).orElseThrow(() -> new AppException(ErrorCode.ORAL_PROGRESS_NOT_FOUND));
+            normalize(exam, p, now());
+            if (!Objects.equals(p.getClientSessionId(), request.clientSessionId()) || !now().isBefore(p.getLeaseUntil()))
+                throw new AppException(ErrorCode.ORAL_ACTIVE_CLIENT);
+            if (!Objects.equals(p.getCurrentTurnId(), request.turnId()) || !Objects.equals(p.getRevision(), request.expectedRevision()))
+                throw new AppException(ErrorCode.ORAL_STALE_COMMAND);
+            if (p.getPhase() != OralExamPhase.ANSWERING) throw new AppException(ErrorCode.ORAL_ACTION_NOT_ALLOWED);
+            return coordinator.currentTurn(p).getLanguage();
+        });
+    }
+
+    /** Attach/claim/final cùng transaction: worker Groq không thể lấy audio streaming giữa chừng. */
+    @Override public OralExamResponse completeStreamedAudio(Long examId, UUID job, OralAudioRequest request, OralAudioPayload audio, String transcript) {
+        attachAudio(examId, job, request, audio, false);
+        var work = claimTranscription(examId, job);
+        if (work != null) completeTranscription(work, transcript, null);
+        return get(examId);
+    }
+
     /** Hash cùng submission là receipt upload; không cho thay bytes đã nhận bằng câu trả lời mới. */
     @Override public OralExamResponse attachAudio(Long examId, UUID job, OralAudioRequest request, OralAudioPayload audio) {
+        return attachAudio(examId, job, request, audio, true);
+    }
+    private OralExamResponse attachAudio(Long examId, UUID job, OralAudioRequest request, OralAudioPayload audio, boolean enqueueStt) {
         return transaction(() -> {
             var exam = access.owned(examId); var p = required(examId); var before = Before.capture(p);
             audioRepository.requireReady(); boolean timedOut=normalize(exam, p, now());
@@ -227,7 +270,7 @@ public class OralExamServiceImpl implements OralExamService {
             String storage = audioStore.storageId();
             audioRepository.attach(job, audio.sha256(), audio.mediaType(), audio.bytes().length, now(), storage); s.setAudioSha256(audio.sha256()); s.setAudioStorageId(storage);
             // attach đã ghi metadata bằng JDBC; phase/revision/câu trả lời không đổi.
-            events.publishEvent(new OralWorkReady(examId,job,OralWorkReady.Stage.STT));
+            if (enqueueStt) events.publishEvent(new OralWorkReady(examId,job,OralWorkReady.Stage.STT));
             return response(exam, p);
         });
     }
@@ -414,6 +457,7 @@ public class OralExamServiceImpl implements OralExamService {
         if (p.getPhase() == OralExamPhase.EXPIRED && exam.getStatus() == StudentExamStatus.IN_PROGRESS) exam.setStatus(StudentExamStatus.EXPIRED);
         if (p.getPhase() == OralExamPhase.COMPLETED && exam.getStatus() == StudentExamStatus.IN_PROGRESS) lifecycle.finishOral(exam.getId());
         entityManager.flush();
+        events.publishEvent(new OralProgressChanged(exam.getId(), p.getRevision()));
     }
 
     /** Chỉ lấy nội dung từ snapshot đã chốt; không cần đọc lại đáp án/rubric đang thay đổi. */
