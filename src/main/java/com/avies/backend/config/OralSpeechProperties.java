@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 @Getter
 @Component
 public class OralSpeechProperties {
+    @Value("${ORAL_TTS_STREAMING_ENABLED:true}") private boolean streamingEnabled;
     /** Chủ động bật sau khi cấu hình key; mặc định không gọi dịch vụ ngoài. */
     @Value("${ORAL_TTS_ENABLED:false}") private boolean enabled;
     /** Chỉ dùng key TTS riêng, không log hoặc trả về client. */

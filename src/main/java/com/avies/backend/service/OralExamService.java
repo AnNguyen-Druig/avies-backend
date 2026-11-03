@@ -13,6 +13,8 @@ public interface OralExamService {
     OralExamResponse open(@NotNull @Positive Long examId, @NotNull @Valid OralExamStartRequest request);
     /** Đọc trạng thái của chính Student và đồng bộ giới hạn thời gian máy chủ. */
     OralExamResponse get(@NotNull @Positive Long examId);
+    /** Đọc riêng text của lượt hiện tại sau PROMPT_FINISHED, không gọi TTS hoặc thay đổi thời gian. */
+    com.avies.backend.dto.response.OralQuestionTextResponse questionText(@NotNull @Positive Long examId, @NotNull UUID turnId);
     /** Chỉ tác vụ nội bộ gọi; khóa/recheck deadline để chốt EXPIRED, không yêu cầu Student còn mở tab. */
     boolean expireOverdue(Long examId);
     /** Giữ quyền riêng, không dùng hàng đợi thao tác nghiệp vụ hoặc revision của lượt đang nghe. */
@@ -21,6 +23,11 @@ public interface OralExamService {
     OralExamResponse execute(@NotNull @Positive Long examId, @NotNull @Valid OralExamCommandRequest request);
     /** Lấy prompt nội bộ trong transaction ngắn, chỉ cho tab hiện hành chuẩn bị/nghe đúng lượt. */
     OralSpeechPlan speechPlan(Long examId, OralSpeechRequest request);
+    /** Xác thực stream đang ANSWERING; ngôn ngữ lấy từ turn, không nhận từ client. */
+    String streamingLanguage(Long examId, OralSpeechRequest request);
+    /** Chỉ transport nội bộ được đưa final Azure vào đây; không có HTTP nhận transcript từ Student. */
+    OralExamResponse completeStreamedAudio(Long examId, UUID job, OralAudioRequest request,
+            com.avies.backend.service.support.OralAudioPayload audio, String transcript);
     /** Sau khi TTS xong phải kiểm tra lại quyền, turn và deadline trước khi đánh dấu sẵn sàng. */
     void confirmSpeech(Long examId, OralSpeechRequest request, String language);
     /** Gắn file đã kiểm tra vào submission, không gọi STT trong transaction. */

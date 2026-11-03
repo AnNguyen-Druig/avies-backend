@@ -10,6 +10,7 @@ public interface OralSpeechService {
     void prefetch(com.avies.backend.service.support.OralSpeechPlan plan);
     /** Phát câu hỏi snapshot hiện tại, nghe lại không tạo turn hoặc tăng quota. */
     byte[] current(@NotNull @Positive Long examId, @NotNull @Valid OralSpeechRequest request);
+    void currentStream(@NotNull @Positive Long examId, @NotNull @Valid OralSpeechRequest request, java.util.function.Consumer<byte[]> chunk);
     /** Nghe thử câu cố định mà không bắt đầu hoặc sửa bất kỳ bài thi nào. */
     byte[] preview(@NotNull @Valid OralSpeechPreviewRequest request);
 }

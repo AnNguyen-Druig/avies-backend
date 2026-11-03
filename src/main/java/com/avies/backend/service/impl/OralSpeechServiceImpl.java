@@ -37,7 +37,8 @@ public class OralSpeechServiceImpl implements OralSpeechService {
     /** Làm nóng cache không mở turn hoặc cấp quyền cho Student. */
     @Override @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void prefetch(com.avies.backend.service.support.OralSpeechPlan plan) {
-        if (settings.ready()) audio(cacheKey(plan.text(),plan.language()), () -> provider.synthesize(plan.text(),plan.language()));
+        if (settings.ready()) audio(cacheKey(plan.text(),plan.language()), () -> provider.synthesize(plan.text(),plan.language()),
+                settings.isStreamingEnabled() ? sink -> provider.stream(plan.text(),plan.language(),sink) : null, null);
     }
     /** Kiểm tra quyền cả trước và sau gọi mạng, kể cả khi cache đã có audio. */
     @Override @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -52,6 +53,13 @@ public class OralSpeechServiceImpl implements OralSpeechService {
                 TimeUnit.NANOSECONDS.toMillis(planned-started),TimeUnit.NANOSECONDS.toMillis(synthesized-planned),
                 TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-synthesized),TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
         return wav;
+    }
+    @Override @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void currentStream(Long examId, OralSpeechRequest request, java.util.function.Consumer<byte[]> chunk) {
+        var plan = oral.speechPlan(examId, request); ready();
+        audio(cacheKey(plan.text(), plan.language()), () -> provider.synthesize(plan.text(), plan.language()),
+                settings.isStreamingEnabled() ? sink -> provider.stream(plan.text(), plan.language(), sink) : null, chunk);
+        oral.confirmSpeech(examId, request, plan.language());
     }
     /** Preview không mở exam và chỉ được đọc hai câu mẫu cố định. */
     @Override @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -75,6 +83,10 @@ public class OralSpeechServiceImpl implements OralSpeechService {
     private void ready() { if (!settings.ready()) throw new AppException(ErrorCode.ORAL_SPEECH_NOT_READY); }
     /** Một future cho mỗi lời đọc; quota giữ lỗi 30 giây để warmup/click nghe không gọi lại liên tục. */
     private byte[] audio(Object key, Supplier<byte[]> create) {
+        return audio(key, create, null, null);
+    }
+    private byte[] audio(Object key, Supplier<byte[]> create, java.util.function.Consumer<java.util.function.Consumer<byte[]>> streaming,
+                         java.util.function.Consumer<byte[]> sink) {
         Cached item; boolean owner = false;
         synchronized (cache) {
             cache.entrySet().removeIf(e -> e.getValue().result.isDone() && e.getValue().expires.isBefore(clock.instant()));
@@ -82,15 +94,34 @@ public class OralSpeechServiceImpl implements OralSpeechService {
             if (item == null) {
                 trim(0);
                 if (cache.size() >= 16 || !capacity.tryAcquire()) throw new AppException(ErrorCode.ORAL_SPEECH_QUOTA);
-                item = new Cached(clock.instant().plusSeconds(1200)); cache.put(key, item); owner = true;
+                item = new Cached(clock.instant().plusSeconds(1200)); item.streaming = streaming != null; cache.put(key, item); owner = true;
+            }
+        }
+        final Cached entry = item;
+        var subscriber = sink == null ? null : new Subscriber(sink);
+        boolean subscribed = false;
+        synchronized (entry) {
+            if (subscriber != null && entry.streaming) {
+                if (entry.subscribers.size() >= 8) throw new AppException(ErrorCode.ORAL_SPEECH_QUOTA);
+                entry.chunks.forEach(subscriber::accept); entry.subscribers.add(subscriber); subscribed = true;
             }
         }
         if (owner) {
             long started=System.nanoTime(); boolean success=false;
             try {
-                byte[] wav = create.get(); GeminiOralSpeechProvider.validateWav(wav);
+                byte[] wav;
+                if (streaming != null) {
+                    var pcm = new java.io.ByteArrayOutputStream();
+                    streaming.accept(part -> {
+                        if (part.length % 2 != 0 || pcm.size() + part.length + 44 > GeminiOralSpeechProvider.MAX_AUDIO_BYTES) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+                        pcm.writeBytes(part);
+                        synchronized (entry) { entry.chunks.add(part); entry.subscribers.forEach(s -> s.accept(part)); }
+                    });
+                    wav = com.avies.backend.service.support.OralPcm.wav(pcm.toByteArray(), 24000);
+                } else wav = create.get();
+                GeminiOralSpeechProvider.validateWav(wav);
                 synchronized (cache) { trim(wav.length); item.size = wav.length; }
-                item.result.complete(wav);
+                synchronized (entry) { entry.result.complete(wav); entry.streaming = false; entry.chunks.clear(); }
                 success=true;
             } catch (RuntimeException failure) {
                 synchronized (cache) {
@@ -98,13 +129,22 @@ public class OralSpeechServiceImpl implements OralSpeechService {
                         item.expires=clock.instant().plusSeconds(30);
                     else cache.remove(key, item);
                 }
-                item.result.completeExceptionally(failure);
+                synchronized (entry) { entry.result.completeExceptionally(failure); entry.streaming = false; entry.chunks.clear(); }
             } finally { capacity.release(); log.info("oral-tts cache={} providerMs={} success={}",key,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started),success); }
         }
-        try { return item.result.get(40, TimeUnit.SECONDS); }
+        try {
+            byte[] wav = item.result.get(40, TimeUnit.SECONDS);
+            if (subscriber != null && subscriber.error != null) throw subscriber.error;
+            if (sink != null && !subscribed) {
+                var pcm = com.avies.backend.service.support.OralPcm.fromWav(wav);
+                for (int offset = 0; offset < pcm.length; offset += 8192) sink.accept(Arrays.copyOfRange(pcm, offset, Math.min(pcm.length, offset + 8192)));
+            }
+            return wav;
+        }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AppException(ErrorCode.ORAL_SPEECH_FAILED); }
         catch (ExecutionException failed) { if (failed.getCause() instanceof AppException safe) throw safe; throw new AppException(ErrorCode.ORAL_SPEECH_FAILED); }
         catch (TimeoutException timeout) { throw new AppException(ErrorCode.ORAL_SPEECH_FAILED); }
+        finally { if (subscriber != null) synchronized (entry) { entry.subscribers.remove(subscriber); } }
     }
     /** Tối đa 16 entries/32 MiB; không đẩy công việc đang chạy ra cache để tránh gọi trùng. */
     private void trim(int incoming) {
@@ -117,9 +157,19 @@ public class OralSpeechServiceImpl implements OralSpeechService {
     }
     /** Future chứa byte WAV, không chứa đề/key hoặc dữ liệu Student. */
     private static final class Cached {
+        private boolean streaming;
+        private final List<byte[]> chunks = new ArrayList<>();
+        private final List<Subscriber> subscribers = new ArrayList<>();
         /** Chia sẻ kết quả cho các yêu cầu trùng. */ private final CompletableFuture<byte[]> result = new CompletableFuture<>();
         /** Cache ngắn hạn; quota chỉ giữ lỗi 30 giây, không được coi là WAV thành công. */ private Instant expires;
         /** Số byte để giới hạn RAM. */ private int size;
         /** Tạo entry trước khi gọi mạng. */ private Cached(Instant expires) { this.expires = expires; }
+    }
+    /** Một client chậm/ngắt không làm mất kết quả cache hoặc ảnh hưởng client khác. */
+    private static final class Subscriber {
+        private final java.util.function.Consumer<byte[]> sink;
+        private volatile RuntimeException error;
+        Subscriber(java.util.function.Consumer<byte[]> sink) { this.sink = sink; }
+        void accept(byte[] pcm) { if (error == null) try { sink.accept(pcm); } catch (RuntimeException disconnected) { error = disconnected; } }
     }
 }

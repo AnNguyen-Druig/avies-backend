@@ -46,7 +46,7 @@ public class OralExamProgress {
         /** Lượt thi sở hữu. */ private Long studentExamId;
         /** Câu chính chứa lượt hỏi. */ private Long studentExamQuestionId;
         /** 0 là câu chính, số dương là follow-up của câu đó. */ private Integer followUpIndex;
-        /** Nội dung nội bộ, không trả về DTO của Student. */ private String promptText;
+        /** Không có trong DTO tiến độ; chỉ mở text đúng lượt sau khi Student đã nghe xong. */ private String promptText;
         /** vi/en do worker xác định; null khi chưa chuẩn bị. */ private String language;
         /** Chỉ worker tin cậy xác nhận giọng đọc sẵn sàng. */ private Boolean promptReady;
         /** PENDING/PROCESSING/ANSWERED/NO_ANSWER/TECHNICAL_ERROR. */ private String answerStatus;

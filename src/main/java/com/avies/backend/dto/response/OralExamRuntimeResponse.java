@@ -7,7 +7,11 @@ public record OralExamRuntimeResponse(
         /** Thông báo an toàn, không chứa URL/key cấu hình. */ String message,
         /** TTS đã cấu hình; độc lập với STT/AI chưa hoàn tất. */ boolean speechReady,
         /** Có cấu hình STT để kiểm tra mic/nhận dạng, chưa phải AI follow-up. */ boolean transcriptionReady,
-        /** Migration metadata audio đã sẵn sàng cho upload thật. */ boolean audioStorageReady) {
+        /** Migration metadata audio đã sẵn sàng cho upload thật. */ boolean audioStorageReady,
+        boolean streamingSttReady, boolean streamingTtsReady) {
+    public OralExamRuntimeResponse(String mode, boolean providersReady, String message, boolean speechReady, boolean transcriptionReady, boolean audioStorageReady) {
+        this(mode, providersReady, message, speechReady, transcriptionReady, audioStorageReady, false, false);
+    }
     /** Giữ tương thích code bước TTS trước đó. */
     public OralExamRuntimeResponse(String mode, boolean providersReady, String message, boolean speechReady) { this(mode, providersReady, message, speechReady, false, false); }
     /** Giữ tương thích chương trình demo nền móng chưa có audio. */

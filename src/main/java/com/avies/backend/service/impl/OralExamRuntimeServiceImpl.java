@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class OralExamRuntimeServiceImpl implements OralExamRuntimeService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false) private com.avies.backend.config.AzureSpeechSttProperties azure;
     /** Kiểm tra role trong DB thay vì chỉ tin authority JWT. */ private final ExamAccessPolicy access;
     /** TTS sẵn sàng riêng, không tuyên bố STT/AI đã hoạt động. */ private final OralSpeechProperties speech;
     /** STT kiểm tra mic độc lập, không khẳng định AI follow-up đã nối. */ private final com.avies.backend.config.OralTranscriptionProperties transcription;
@@ -24,10 +25,12 @@ public class OralExamRuntimeServiceImpl implements OralExamRuntimeService {
     @Transactional(readOnly = true)
     public OralExamRuntimeResponse get() {
         access.currentUser("STUDENT");
-        boolean audioReady=transcription.ready() && audioRepository.ready();
+        boolean azureReady=azure != null && azure.ready();
+        boolean audioReady=(transcription.ready() || azureReady) && audioRepository.ready();
         boolean ready=speech.ready() && audioReady && decision.ready() && decisionRepository.ready();
         return new OralExamRuntimeResponse(ready ? "LIVE" : "FOUNDATION", ready,
                 ready ? "Đã cấu hình giọng đọc, nhận dạng và AI hội thoại. Bắt đầu theo lịch máy chủ; hạn mức dịch vụ vẫn được kiểm tra khi xử lý."
-                        : "Chưa đủ cấu hình TTS, STT, AI hội thoại hoặc migration. Có thể thử thiết bị đã cấu hình trước khi bắt đầu.", speech.ready(), transcription.ready(), audioReady);
+                        : "Chưa đủ cấu hình TTS, STT, AI hội thoại hoặc migration. Có thể thử thiết bị đã cấu hình trước khi bắt đầu.", speech.ready(), transcription.ready(), audioReady,
+                azureReady && audioReady, speech.ready() && speech.isStreamingEnabled());
     }
 }

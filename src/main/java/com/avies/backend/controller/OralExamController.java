@@ -34,6 +34,15 @@ public class OralExamController {
         return ApiResponse.<OralExamResponse>builder().result(service.get(id)).build();
     }
 
+    /** Chỉ mở text khi Student yêu cầu sau khi đã nghe, không gửi đề trong polling tiến độ. */
+    @GetMapping("/turns/{turnId}/question-text")
+    @Operation(summary = "Xem text câu hỏi hiện tại đã nghe xong", description = "Chỉ chủ lượt đang trả lời được xem đúng turn hiện tại; không gọi TTS, không thay đổi tiến trình hoặc trả đáp án/rubric.")
+    public org.springframework.http.ResponseEntity<ApiResponse<OralQuestionTextResponse>> questionText(
+            @PathVariable @Positive Long id, @PathVariable java.util.UUID turnId) {
+        return org.springframework.http.ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(ApiResponse.<OralQuestionTextResponse>builder().result(service.questionText(id, turnId)).build());
+    }
+
     /** Client không tự chuyển sang câu tùy ý, ghi transcript hoặc cấp thêm follow-up. */
     @PostMapping("/actions")
     @Operation(summary = "Thao tác hội thoại có phiên bản và chống gửi trùng", description = "SUBMIT dành mã xử lý; upload audio qua endpoint submissions/{job}/audio. STT/AI chỉ được hoàn tất qua worker nội bộ.")

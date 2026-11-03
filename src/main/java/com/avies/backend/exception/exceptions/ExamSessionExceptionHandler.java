@@ -9,6 +9,7 @@ import com.avies.backend.controller.OralExamController;
 import com.avies.backend.controller.OralExamRuntimeController;
 import com.avies.backend.controller.OralSpeechController;
 import com.avies.backend.controller.OralTranscriptionController;
+import com.avies.backend.controller.OralExamEventsController;
 import com.avies.backend.dto.response.ApiResponse;
 import com.avies.backend.exception.AppException;
 import com.avies.backend.exception.ErrorCode;
@@ -31,7 +32,7 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {ExamSessionController.class, StudentAssignmentController.class,
-        StudentExamController.class, EligibleStudentController.class, ExamLifecycleController.class, OralExamController.class, OralExamRuntimeController.class, OralSpeechController.class, OralTranscriptionController.class})
+        StudentExamController.class, EligibleStudentController.class, ExamLifecycleController.class, OralExamController.class, OralExamRuntimeController.class, OralSpeechController.class, OralTranscriptionController.class, OralExamEventsController.class})
 public class ExamSessionExceptionHandler {
     /** Chỉ trả thông điệp ErrorCode đã kiểm soát, không đưa dữ liệu exception nội bộ ra client. */
     @ExceptionHandler(AppException.class)
@@ -77,7 +78,7 @@ public class ExamSessionExceptionHandler {
 
     /** Tạo envelope lỗi cùng HTTP status theo ErrorCode. */
     private ResponseEntity<ApiResponse<Void>> response(ErrorCode error) {
-        return ResponseEntity.status(error.getHttpStatusCode()).body(ApiResponse.<Void>builder()
+        return ResponseEntity.status(error.getHttpStatusCode()).contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(ApiResponse.<Void>builder()
                 .code(error.getCode()).message(error.getMessage()).build());
     }
 }
