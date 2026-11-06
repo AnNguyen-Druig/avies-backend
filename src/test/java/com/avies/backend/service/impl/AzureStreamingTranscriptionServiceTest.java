@@ -28,6 +28,13 @@ class AzureStreamingTranscriptionServiceTest {
     }
     @AfterEach void cleanup() { service.close(); }
     StreamingTranscriptionService.Session open() { return service.open("vi", updates::add); }
+    StreamingTranscriptionService.Session openAfterCleanup(String language) throws Exception {
+        for (int i=0;i<200;i++) {
+            try { return service.open(language, updates::add); }
+            catch (AppException busy) { assertThat(busy.getErrorCode().getCode()).isEqualTo(1812); Thread.sleep(5); }
+        }
+        throw new AssertionError("Native STT cleanup did not release the gate");
+    }
     void assertCode(Runnable action, int code) {
         assertThatThrownBy(action::run).isInstanceOfSatisfying(AppException.class, e -> assertThat(e.getErrorCode().getCode()).isEqualTo(code));
     }
@@ -47,8 +54,8 @@ class AzureStreamingTranscriptionServiceTest {
         assertThat(finalResult.transcript()).isEqualTo("Xin chào. Phần cuối đã được chốt."); assertThat(finalResult.finalSegments()).isEqualTo(2);
         assertThat(updates).extracting(StreamingTranscriptionService.Update::kind).contains(StreamingTranscriptionService.Kind.PARTIAL, StreamingTranscriptionService.Kind.FINAL);
         assertThat(updates.stream().filter(u -> u.kind() == StreamingTranscriptionService.Kind.FINAL).count()).isEqualTo(2);
-        verify(channel).close();
-        var second = service.open("en", updates::add); second.close();
+        verify(channel,timeout(1000)).close();
+        openAfterCleanup("en").close();
         verify(engine).open(eq("vi"), any()); verify(engine).open(eq("en"), any());
     }
 
@@ -57,7 +64,7 @@ class AzureStreamingTranscriptionServiceTest {
         session.write(new byte[32]); var result = session.finish();
         assertCode(() -> open(), 1812); listener.get().stopped();
         assertThat(result.toCompletableFuture().get(2, TimeUnit.SECONDS).hasSpeech()).isFalse();
-        assertThatCode(() -> open().close()).doesNotThrowAnyException();
+        openAfterCleanup("vi").close();
     }
 
     @Test void permitIsHeldWhileNativeCleanupIsStillRunning() throws Exception {
@@ -68,7 +75,7 @@ class AzureStreamingTranscriptionServiceTest {
         try {
             assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
             assertCode(this::open, 1812);
-            assertThat(result.toCompletableFuture()).isNotDone();
+            assertThat(result.toCompletableFuture().get(1, TimeUnit.SECONDS).hasSpeech()).isFalse();
             verify(engine, times(1)).open(anyString(), any());
         } finally { release.countDown(); }
         assertThat(result.toCompletableFuture().get(2, TimeUnit.SECONDS).hasSpeech()).isFalse();
@@ -127,9 +134,11 @@ class AzureStreamingTranscriptionServiceTest {
         fail("Gate không được giải phóng sau lỗi mở SDK");
     }
 
-    @Test void nativeCleanupFailureKeepsTheGateClosedRatherThanStartingASecondAzureRequest() {
+    @Test void nativeCleanupFailureKeepsTheGateClosedButDoesNotDiscardAnAlreadyFinalizedAnswer() throws Exception {
         var session = open(); session.write(new byte[32]); var result = session.finish();
-        doThrow(new IllegalStateException("not logged")).when(channel).close(); listener.get().stopped(); assertFailed(result);
+        listener.get().recognized("final", "Câu trả lời đã chốt.");
+        doThrow(new IllegalStateException("not logged")).when(channel).close(); listener.get().stopped();
+        assertThat(result.toCompletableFuture().get(1,TimeUnit.SECONDS).transcript()).isEqualTo("Câu trả lời đã chốt.");
         assertCode(this::open, 1812); verify(engine, times(1)).open(anyString(), any());
     }
 

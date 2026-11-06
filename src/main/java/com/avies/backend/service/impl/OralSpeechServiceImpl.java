@@ -56,10 +56,18 @@ public class OralSpeechServiceImpl implements OralSpeechService {
     }
     @Override @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void currentStream(Long examId, OralSpeechRequest request, java.util.function.Consumer<byte[]> chunk) {
+        long started=System.nanoTime(); long[] first={-1};
         var plan = oral.speechPlan(examId, request); ready();
+        long planned=System.nanoTime();
         audio(cacheKey(plan.text(), plan.language()), () -> provider.synthesize(plan.text(), plan.language()),
-                settings.isStreamingEnabled() ? sink -> provider.stream(plan.text(), plan.language(), sink) : null, chunk);
+                settings.isStreamingEnabled() ? sink -> provider.stream(plan.text(), plan.language(), sink) : null, pcm -> {
+                    if(first[0]<0) first[0]=TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started); chunk.accept(pcm);
+                });
+        long synthesized=System.nanoTime();
         oral.confirmSpeech(examId, request, plan.language());
+        log.info("oral-speech-stream exam={} turn={} planMs={} firstAudioMs={} audioWaitMs={} confirmMs={} totalMs={}",examId,plan.turnId(),
+                TimeUnit.NANOSECONDS.toMillis(planned-started),first[0],TimeUnit.NANOSECONDS.toMillis(synthesized-planned),
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-synthesized),TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
     }
     /** Preview không mở exam và chỉ được đọc hai câu mẫu cố định. */
     @Override @Transactional(propagation = Propagation.NOT_SUPPORTED)

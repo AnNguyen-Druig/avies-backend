@@ -2,73 +2,91 @@ package com.avies.backend.service.impl;
 
 import com.avies.backend.config.AzureSpeechTtsProperties;
 import com.avies.backend.exception.*;
-import com.avies.backend.service.support.OralPcm;
-import com.avies.backend.service.support.AzureSpeechSsml;
-import com.microsoft.cognitiveservices.speech.*;
-import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
-import lombok.RequiredArgsConstructor;
+import com.avies.backend.service.support.*;
+import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import java.io.ByteArrayOutputStream;
-import java.util.Arrays;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-/** Azure F0 backup cùng định dạng PCM 24kHz; không đổi STT quota hoặc pricing tier. */
-@Component @RequiredArgsConstructor
-public class AzureOralSpeechProvider {
+/** Azure F0 backup; pool tối đa 2 session TTS, tách khỏi gate STT 1 session. */
+@Component @lombok.extern.slf4j.Slf4j
+public class AzureOralSpeechProvider implements AutoCloseable {
     private final AzureSpeechTtsProperties settings;
-    private final Semaphore capacity = new Semaphore(2);
-    public boolean ready() { return settings.ready(); }
-    public byte[] synthesize(String text, String language) {
-        var pcm = new ByteArrayOutputStream(); stream(text, language, pcm::writeBytes); return OralPcm.wav(pcm.toByteArray(), 24000);
+    private final StreamingSynthesisEngine engine;
+    private final Semaphore capacity=new Semaphore(2);
+    private final Semaphore nativeSlots=new Semaphore(2);
+    private final Deque<Idle> idle=new ArrayDeque<>();
+    private volatile boolean shutdown;
+    private static final long IDLE_NANOS=TimeUnit.MINUTES.toNanos(5);
+    @Autowired public AzureOralSpeechProvider(AzureSpeechTtsProperties settings,StreamingSynthesisEngine engine) { this.settings=settings; this.engine=engine; }
+    /** Constructor dùng bởi các test/live fixture trước đây, không tự mở native session. */
+    public AzureOralSpeechProvider(AzureSpeechTtsProperties settings) { this(settings,new AzureSpeechSynthesisEngine()); }
+    public boolean ready() { return !shutdown && settings.ready(); }
+    public byte[] synthesize(String text,String language) {
+        var pcm=new ByteArrayOutputStream(); stream(text,language,pcm::writeBytes); return OralPcm.wav(pcm.toByteArray(),24000);
     }
-    public void stream(String text, String language, Consumer<byte[]> sink) {
-        if (!ready()) throw new AppException(ErrorCode.ORAL_SPEECH_NOT_READY);
-        if (text == null || text.isBlank() || text.length() > 11000 || !("vi".equals(language) || "en".equals(language))) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
-        String voice = "vi".equals(language) ? settings.getVietnameseVoice() : settings.getEnglishVoice();
-        String ssml = AzureSpeechSsml.render(text, language, voice);
-        if (!capacity.tryAcquire()) throw new AppException(ErrorCode.ORAL_SPEECH_QUOTA);
-        try (var config = SpeechConfig.fromSubscription(settings.getApiKey(), settings.getRegion())) {
-            config.setSpeechSynthesisVoiceName(voice);
-            config.setSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm);
-            try (var synthesis = new SpeechSynthesizer(config, (AudioConfig)null)) {
-                var delivered = new ByteArrayOutputStream(); var failure = new AtomicReference<RuntimeException>();
-                var guard = new Object(); var accepting = new boolean[]{true};
-                synthesis.Synthesizing.addEventListener((sender, event) -> {
-                    synchronized (guard) {
-                        if (!accepting[0] || failure.get() != null) return;
-                        byte[] pcm = event.getResult().getAudioData(); if (pcm == null || pcm.length == 0) return;
-                        try { append(delivered, pcm, sink); } catch (RuntimeException bad) { failure.set(bad); }
-                    }
-                });
-                try (var result = synthesis.SpeakSsmlAsync(ssml).get(35, TimeUnit.SECONDS)) {
-                    synchronized (guard) {
-                        accepting[0] = false;
-                        if (failure.get() != null) throw failure.get();
-                        if (result.getReason() != ResultReason.SynthesizingAudioCompleted) {
-                            var cancellation = SpeechSynthesisCancellationDetails.fromResult(result);
-                            if (cancellation.getErrorCode() == CancellationErrorCode.TooManyRequests) throw new AppException(ErrorCode.ORAL_SPEECH_QUOTA);
-                            if (cancellation.getErrorCode() == CancellationErrorCode.AuthenticationFailure || cancellation.getErrorCode() == CancellationErrorCode.Forbidden)
-                                throw new AppException(ErrorCode.ORAL_SPEECH_NOT_READY);
-                            throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
-                        }
-                        byte[] all = result.getAudioData(), sent = delivered.toByteArray();
-                        if (all == null || all.length < 2 || all.length % 2 != 0 || all.length + 44 > GeminiOralSpeechProvider.MAX_AUDIO_BYTES
-                                || sent.length > all.length || !Arrays.equals(sent, 0, sent.length, all, 0, sent.length)) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
-                        // Future có thể đến sát callback cuối; bổ sung đúng phần thiếu từ kết quả SDK, không phát lặp.
-                        if (sent.length < all.length) append(delivered, Arrays.copyOfRange(all, sent.length, all.length), sink);
-                    }
-                } finally { synchronized (guard) { accepting[0] = false; } }
+    public void stream(String text,String language,Consumer<byte[]> sink) {
+        if(!ready()) throw new AppException(ErrorCode.ORAL_SPEECH_NOT_READY);
+        String voice="vi".equals(language)?settings.getVietnameseVoice():settings.getEnglishVoice();
+        String ssml=AzureSpeechSsml.render(text,language,voice);
+        if(!capacity.tryAcquire()) throw new AppException(ErrorCode.ORAL_SPEECH_QUOTA);
+        StreamingSynthesisEngine.Session session=null; boolean reusable=false;
+        long began=System.nanoTime(); long[] first={-1}; boolean reused=false;
+        String key=fingerprint(voice);
+        try {
+            synchronized(idle) {
+                if(shutdown) throw new AppException(ErrorCode.ORAL_SPEECH_NOT_READY);
+                for(var iterator=idle.iterator();iterator.hasNext();) {
+                    var candidate=iterator.next();
+                    if(candidate.key.equals(key) && System.nanoTime()-candidate.usedAt<IDLE_NANOS) { iterator.remove(); session=candidate.session; reused=true; break; }
+                }
+                if(session==null && !idle.isEmpty()) {
+                    var replaced=idle.removeFirst();
+                    if(!dispose(replaced.session)) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
+                }
             }
-        } catch (AppException safe) { throw safe; }
-        catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AppException(ErrorCode.ORAL_SPEECH_FAILED); }
-        catch (Exception | LinkageError failure) { throw new AppException(ErrorCode.ORAL_SPEECH_FAILED); }
-        finally { capacity.release(); }
+            if(session==null) {
+                if(!nativeSlots.tryAcquire()) throw new AppException(ErrorCode.ORAL_SPEECH_QUOTA);
+                try { session=Objects.requireNonNull(engine.open(settings.getApiKey(),settings.getRegion(),voice)); }
+                catch(RuntimeException | LinkageError failure) { nativeSlots.release(); throw failure; }
+            }
+            session.preconnect();
+            session.stream(ssml,pcm->{ if(first[0]<0) first[0]=TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-began); sink.accept(pcm); });
+            reusable=true;
+        } catch(AppException safe) { throw safe; }
+        catch(RuntimeException | LinkageError failure) { throw new AppException(ErrorCode.ORAL_SPEECH_FAILED); }
+        finally {
+            if(session!=null) {
+                synchronized(idle) {
+                    if(reusable && !shutdown && idle.size()<2) idle.addLast(new Idle(key,session,System.nanoTime()));
+                    else dispose(session);
+                }
+            }
+            capacity.release();
+            log.info("oral-azure-tts reused={} firstAudioMs={} totalMs={} success={}",reused,first[0],TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-began),reusable);
+        }
     }
-    private static void append(ByteArrayOutputStream delivered, byte[] pcm, Consumer<byte[]> sink) {
-        if (pcm.length % 2 != 0 || delivered.size() + pcm.length + 44 > GeminiOralSpeechProvider.MAX_AUDIO_BYTES) throw new AppException(ErrorCode.ORAL_SPEECH_FAILED);
-        delivered.writeBytes(pcm);
-        for (int offset = 0; offset < pcm.length; offset += 8192) sink.accept(Arrays.copyOfRange(pcm, offset, Math.min(offset + 8192, pcm.length)));
+    /** Chỉ mở native connection khi dùng backup; thu hồi session nhàn rỗi sau 5 phút. */
+    @Scheduled(fixedDelay=30000) public void evictIdle() {
+        synchronized(idle) {
+            for(var iterator=idle.iterator();iterator.hasNext();) {
+                var entry=iterator.next(); if(shutdown || System.nanoTime()-entry.usedAt>=IDLE_NANOS) { iterator.remove(); dispose(entry.session); }
+            }
+        }
     }
+    @Override @PreDestroy public void close() { shutdown=true; evictIdle(); }
+    private boolean dispose(StreamingSynthesisEngine.Session session) {
+        try { session.close(); nativeSlots.release(); return true; } catch(RuntimeException | LinkageError failure) { log.warn("oral-azure-tts cleanup=FAILED permit=HELD"); return false; }
+    }
+    private String fingerprint(String voice) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest((settings.getApiKey()+"\0"+settings.getRegion()+"\0"+voice).getBytes(StandardCharsets.UTF_8))); }
+        catch(java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+    }
+    private record Idle(String key,StreamingSynthesisEngine.Session session,long usedAt) { }
 }

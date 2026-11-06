@@ -133,6 +133,9 @@ public class AzureStreamingTranscriptionService implements StreamingTranscriptio
             if (closing) return;
             if (!finishing || partialOutstanding) { failed(1811); return; }
             completed = new Result(String.join(" ", segments.values()), segments.size()); closing = true; dispose();
+            // sessionStopped sau EOF đã chốt mọi final. Chạy bước AI song song cleanup,
+            // nhưng active chỉ được nhả sau khi native session thực sự đóng.
+            completion.complete(completed);
         }
 
         @Override public synchronized void failed(int code) {
@@ -146,6 +149,7 @@ public class AzureStreamingTranscriptionService implements StreamingTranscriptio
             if (opening || cleanupQueued) return;
             cleanupQueued = true;
             cleanup.execute(() -> {
+                long cleanupStarted = System.nanoTime();
                 boolean released = false;
                 try {
                     if (channel != null) channel.close();
@@ -153,8 +157,8 @@ public class AzureStreamingTranscriptionService implements StreamingTranscriptio
                 } catch (RuntimeException nativeFailure) {
                     log.warn("azure-stt cleanup=FAILED gate=CLOSED"); // Không cấp phiên thứ hai khi chưa chắc native session đã đóng.
                 } finally {
-                    if (released && completed != null && error == null) completion.complete(completed);
-                    else completion.completeExceptionally(failure(error == null ? 1811 : error));
+                    if (completed == null || error != null) completion.completeExceptionally(failure(error == null ? 1811 : error));
+                    log.info("azure-stt cleanupMs={} released={}", TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-cleanupStarted), released);
                 }
             });
         }

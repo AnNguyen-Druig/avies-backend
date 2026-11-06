@@ -81,7 +81,7 @@ public class OralAudioWebSocket extends AbstractWebSocketHandler {
                             c.stream = stt.open(language, update -> send(c, Map.of("type", update.kind().name(), "segmentIndex", update.segmentIndex(), "text", update.text())));
                             c.working = false;
                         }
-                        send(c, Map.of("type", "READY", "sampleRate", 16000));
+                        send(c, Map.of("type", "READY", "sampleRate", 16000, "statePush", true));
                     });
                 }
                 case "FINISH" -> {
@@ -116,22 +116,31 @@ public class OralAudioWebSocket extends AbstractWebSocketHandler {
     private void finish(Client c, OralExamCommandRequest command) {
         long started = System.nanoTime();
         var reserved = as(c, () -> oral.execute(c.examId, command));
+        long reservedAt = System.nanoTime();
         if (reserved.phase() != com.avies.backend.entity.enums.OralExamPhase.TRANSCRIBING || !Objects.equals(reserved.currentTurnId(), command.turnId())) {
             send(c, Map.of("type", "RESULT", "state", reserved)); close(c); return;
         }
         var result = c.stream.finish().toCompletableFuture();
         try {
             var finalText = result.get(18, TimeUnit.SECONDS);
+            long finalAt = System.nanoTime();
             byte[] pcm; synchronized (c) { pcm = c.audio.toByteArray(); }
             var audio = OralAudioPayload.detect(OralPcm.wav(pcm, 16000));
             var state = as(c, () -> oral.completeStreamedAudio(c.examId, reserved.submissionId(),
                     new OralAudioRequest(command.clientSessionId(), command.turnId()), audio, finalText.transcript()));
             send(c, Map.of("type", "RESULT", "state", state));
-            log.info("oral-stream exam={} turn={} finishMs={} segments={}", c.examId, command.turnId(),
-                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), finalText.finalSegments());
+            log.info("oral-stream exam={} turn={} job={} reserveMs={} finalWaitMs={} audioCommitMs={} finishMs={} segments={}", c.examId, command.turnId(),reserved.submissionId(),
+                    TimeUnit.NANOSECONDS.toMillis(reservedAt-started),TimeUnit.NANOSECONDS.toMillis(finalAt-reservedAt),
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-finalAt),TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), finalText.finalSegments());
             // Giữ kênh invalidation ngắn trong lúc AI quyết định, không giữ phiên STT hoặc audio RAM.
             if (state.phase() == com.avies.backend.entity.enums.OralExamPhase.DECIDING) {
-                synchronized (c) { c.audio.reset(); c.working = false; c.finishedAt = System.nanoTime(); }
+                long revision;
+                synchronized (c) {
+                    c.audio.reset(); c.working = false; c.finishedAt = System.nanoTime();
+                    c.deliveredRevision=Math.max(c.deliveredRevision,state.revision()); revision=c.progressRevision;
+                }
+                // Commit AI có thể đến trước RESULT; chỉ đọc state nếu có revision mới hơn receipt này.
+                queueProgress(c,revision);
             } else close(c);
         } catch (Exception failure) { fail(c, code(failure)); }
     }
@@ -161,12 +170,51 @@ public class OralAudioWebSocket extends AbstractWebSocketHandler {
         }
     }
 
-    /** Chỉ gửi revision sau commit; không trả prompt, đáp án hoặc rubric trên kênh tiến độ. */
+    /** Sau commit: trước FINISH chỉ invalidation; sau FINISH gửi DTO Student đã kiểm tra lại JWT/owner/role. */
     @org.springframework.transaction.event.TransactionalEventListener
     public void changed(OralProgressChanged event) {
         for (var c : clients.values()) if (c.examId == event.examId()) {
-            synchronized (c) { if (c.closed || c.auth == null || c.start == null) continue; }
-            run(c, () -> { authenticated(c); send(c, Map.of("type", "PROGRESS", "revision", event.revision())); });
+            queueProgress(c,event.revision());
+        }
+    }
+
+    private void queueProgress(Client c,long revision) {
+        synchronized(c) {
+            if(c.closed || c.auth==null || c.start==null) return;
+            c.progressRevision=Math.max(c.progressRevision,revision);
+            if(c.progressPending || c.progressRevision<=c.deliveredRevision || c.finishing && c.working) return;
+            c.progressPending=true;
+        }
+        run(c,()->pushProgress(c));
+    }
+
+    private void pushProgress(Client c) {
+        for (int attempt=0;attempt<4;attempt++) {
+            long requested; boolean finishing;
+            synchronized (c) {
+                if(c.closed || c.finishing && c.working) { c.progressPending=false; return; }
+                requested=c.progressRevision; finishing=c.finishing;
+            }
+            authenticated(c);
+            if (!finishing) {
+                send(c,Map.of("type","PROGRESS","revision",requested));
+            } else {
+                // Không dùng payload nội bộ trong event: GET service kiểm tra danh tính DB và deadline như REST.
+                decoder.decode(((JwtAuthenticationToken)c.auth).getToken().getTokenValue());
+                var state=as(c, () -> oral.get(c.examId));
+                authenticated(c);
+                var message=Map.of("type","PROGRESS","revision",state.revision(),"state",state);
+                String encoded=json.writeValueAsString(message);
+                // Hội thoại lớn quay về GET thay vì vượt buffer WS; client cũ vẫn hiểu revision.
+                if (encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=96*1024) send(c,message);
+                else send(c,Map.of("type","PROGRESS","revision",state.revision()));
+                requested=state.revision();
+            }
+            synchronized (c) {
+                c.deliveredRevision=Math.max(c.deliveredRevision,requested);
+                if(attempt==3 && c.progressRevision>requested) send(c,Map.of("type","PROGRESS","revision",c.progressRevision));
+                if (c.closed || c.progressRevision<=requested || attempt==3) { c.progressPending=false; return; }
+            }
         }
     }
 
@@ -209,7 +257,7 @@ public class OralAudioWebSocket extends AbstractWebSocketHandler {
     private static final class Client {
         final long examId, created = System.nanoTime(); final WebSocketSession socket; final ByteArrayOutputStream audio = new ByteArrayOutputStream();
         Authentication auth; OralSpeechRequest start; StreamingTranscriptionService.Session stream;
-        volatile boolean closed; boolean working, finishing, checked; long lastCheck = System.nanoTime(), finishedAt;
+        volatile boolean closed; boolean working, finishing, checked, progressPending; long lastCheck = System.nanoTime(), finishedAt, progressRevision=-1, deliveredRevision=-1;
         Client(long examId, WebSocketSession socket) { this.examId = examId; this.socket = socket; }
     }
 }

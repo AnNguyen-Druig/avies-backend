@@ -30,7 +30,8 @@ class AzureTtsBackupLiveTest {
         ReflectionTestUtils.setField(settings,"englishVoice",value(local,"AZURE_TTS_VOICE_EN","en-US-AvaMultilingualNeural"));
         assertTrue(settings.ready(),"Configure local Azure Speech F0 before the opt-in backup test");
         var primary = mock(GeminiOralSpeechProvider.class); doThrow(new AppException(ErrorCode.ORAL_SPEECH_QUOTA)).when(primary).stream(anyString(),anyString(),any());
-        var backup = new FailoverOralSpeechProvider(primary,new AzureOralSpeechProvider(settings),Clock.systemUTC());
+        try (var azure = new AzureOralSpeechProvider(settings)) {
+        var backup = new FailoverOralSpeechProvider(primary,azure,Clock.systemUTC());
         var chunks = new ArrayList<byte[]>(); long started = System.nanoTime(); long[] first = {0};
         backup.stream(language.equals("vi") ? "Câu số một. Bạn hãy nêu lí do tại sao phải đặt tên các use case khác nhau?" : "Question number one. Please explain your answer.", language, pcm -> {
             if (chunks.isEmpty()) first[0] = TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started); chunks.add(pcm);
@@ -42,6 +43,7 @@ class AzureTtsBackupLiveTest {
         Files.write(previews.resolve("azure-multilingual-" + language + ".wav"), com.avies.backend.service.support.OralPcm.wav(pcm.toByteArray(),24000));
         verify(primary,times(1)).stream(anyString(),anyString(),any());
         System.out.printf("AZURE_TTS_BACKUP_LIVE language=%s chunks=%d bytes=%d firstAudioMs=%d totalMs=%d%n",language,chunks.size(),bytes,first[0],TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
+        }
     }
     private static String value(Properties local,String key,String fallback) { return System.getenv(key)==null?local.getProperty(key,fallback).strip():System.getenv(key).strip(); }
 }

@@ -47,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         com.avies.backend.controller.OralAudioWebSocket.class, com.avies.backend.config.AzureSpeechSttProperties.class,
         com.avies.backend.service.impl.AzureSpeechStreamingEngine.class, com.avies.backend.service.impl.AzureStreamingTranscriptionService.class,
         com.avies.backend.config.AzureSpeechTtsProperties.class, com.avies.backend.service.impl.AzureOralSpeechProvider.class,
+        com.avies.backend.service.impl.AzureSpeechSynthesisEngine.class,
         com.avies.backend.service.impl.FailoverOralSpeechProvider.class,
         OralExamPostgresIT.StreamingValidation.class})
 class OralExamPostgresIT {

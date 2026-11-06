@@ -12,7 +12,7 @@ public interface StreamingTranscriptionService {
     enum Kind { PARTIAL, FINAL }
     /** FINAL là một đoạn Azure đã chốt, chưa phải toàn bộ câu trả lời đã nộp. */
     record Update(Kind kind, int segmentIndex, String text) { }
-    /** Chỉ hoàn tất sau EOF/sessionStopped và đóng tài nguyên SDK; không ghép partial vào kết quả cuối. */
+    /** Chỉ hoàn tất sau EOF/sessionStopped; cleanup SDK chạy riêng, vẫn giữ giới hạn STT đến khi đóng xong. */
     record Result(String transcript, int finalSegments) { public boolean hasSpeech() { return !transcript.isBlank(); } }
 
     interface Session extends AutoCloseable {

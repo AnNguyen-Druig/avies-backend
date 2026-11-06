@@ -55,7 +55,10 @@ class OralAudioWebSocketTest {
         fail("Missing event " + type);
     }
     OralExamResponse state(OralExamPhase phase) {
-        return new OralExamResponse(7L, StudentExamStatus.IN_PROGRESS, phase, 3L, now, now.plusMinutes(20), now.plusSeconds(45), 1, 1, turn, 0, "vi", 0, 1, 90000L, job, List.of(), List.of(), false, null);
+        return state(phase,3L);
+    }
+    OralExamResponse state(OralExamPhase phase,long revision) {
+        return new OralExamResponse(7L, StudentExamStatus.IN_PROGRESS, phase, revision, now, now.plusMinutes(20), now.plusSeconds(45), 1, 1, turn, 0, "vi", 0, 1, 90000L, job, List.of(), List.of(), false, null);
     }
     @Test void requiresAuthenticationOwnershipAndStartBeforeAnyAudioReachesAzure() throws Exception {
         handler.handleMessage(socket, new BinaryMessage(new byte[32])); await("ERROR"); verifyNoInteractions(stt, oral);
@@ -81,9 +84,11 @@ class OralAudioWebSocketTest {
         text(Map.of("type", "FINISH", "command", new OralExamCommandRequest(UUID.randomUUID(), client, 2L, turn, OralExamAction.SUBMIT, null)));
         await("RESULT"); verify(oral).completeStreamedAudio(eq(7L), eq(job), any(), any(), eq("Xin chào."));
         assertThat(messages.stream().filter(s -> s.contains("\"type\":\"RESULT\"")).findFirst().orElseThrow()).contains("\"serverTime\":\"2035-01-01T10:00:00Z\"");
+        when(oral.get(7L)).thenReturn(state(OralExamPhase.PREPARING,8L));
         handler.changed(new OralProgressChanged(7L, 8L)); await("PROGRESS");
         assertThat(messages.stream().filter(s -> s.contains("\"type\":\"PROGRESS\"")).findFirst().orElseThrow())
-                .contains("\"revision\":8").doesNotContain("Xin chào", "prompt", "rubric");
+                .contains("\"revision\":8","\"state\":","\"phase\":\"PREPARING\"").doesNotContain("Xin chào", "prompt", "rubric");
+        verify(decoder,atLeast(2)).decode("fixture-token"); verify(oral).get(7L);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
     @Test void rejectsClientTranscriptAndDisconnectDoesNotSubmitAnAnswer() throws Exception {
@@ -96,5 +101,21 @@ class OralAudioWebSocketTest {
     @Test void rejectsTokenInUrlBeforeAuthentication() throws Exception {
         handler.afterConnectionClosed(socket, CloseStatus.NORMAL); when(socket.getUri()).thenReturn(URI.create("ws://localhost/student-exams/7/oral-examination/stream?token=bad"));
         handler.afterConnectionEstablished(socket); verify(socket).close(CloseStatus.POLICY_VIOLATION); verifyNoInteractions(stt, decoder);
+    }
+    @Test void progressBeforeSubmitIsRevisionOnlyAndDoesNotReadOrDiscloseTheConversation() throws Exception {
+        start(); handler.changed(new OralProgressChanged(7L,4)); await("PROGRESS");
+        assertThat(messages.stream().filter(s->s.contains("\"type\":\"PROGRESS\"")).findFirst().orElseThrow()).doesNotContain("state","transcripts");
+        verify(oral,never()).get(anyLong());
+    }
+    @Test void revokedJwtAfterSubmitCannotReceivePushedStudentState() throws Exception {
+        start(); when(stream.finish()).thenReturn(CompletableFuture.completedFuture(new StreamingTranscriptionService.Result("Final.",1)));
+        when(oral.execute(eq(7L),any())).thenReturn(state(OralExamPhase.TRANSCRIBING));
+        when(oral.completeStreamedAudio(any(),any(),any(),any(),any())).thenReturn(state(OralExamPhase.DECIDING));
+        handler.handleMessage(socket,new BinaryMessage(new byte[3200]));
+        text(Map.of("type","FINISH","command",new OralExamCommandRequest(UUID.randomUUID(),client,2L,turn,OralExamAction.SUBMIT,null))); await("RESULT");
+        when(decoder.decode("fixture-token")).thenThrow(new org.springframework.security.oauth2.jwt.BadJwtException("revoked fixture"));
+        handler.changed(new OralProgressChanged(7L,8)); await("ERROR");
+        verify(oral,never()).get(anyLong());
+        assertThat(messages).noneMatch(s->s.contains("\"type\":\"PROGRESS\""));
     }
 }

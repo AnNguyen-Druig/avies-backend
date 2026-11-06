@@ -14,7 +14,7 @@ import java.text.Normalizer;
 import java.util.*;
 
 /** Gemini chỉ đề xuất một câu hỏi tiếp hoặc ADVANCE, không chấm điểm hay nhận lệnh từ transcript. */
-@Service
+@Service @lombok.extern.slf4j.Slf4j
 public class GeminiOralDecisionProvider implements OralDecisionProvider {
     /** Quy tắc cấp hệ thống, tách khỏi JSON dữ liệu Student không tin cậy. */
     private static final String INSTRUCTION = """
@@ -38,6 +38,7 @@ public class GeminiOralDecisionProvider implements OralDecisionProvider {
             If a useful probe would disclose the expected answer or repeat a question, use ADVANCE instead.
             Do not repeat any question already in history. Never require the student to restate an answer they already gave.
             """;
+    private static final String REFERENCE_HINT = "\nIn history, questionRef=\"mainQuestion\" means the exact mainQuestion text; answer is always the complete saved transcript.";
     /** Cấu hình không chứa trong response hoặc log. */ private final OralDecisionProperties settings;
     /** Timeout hữu hạn và host cố định. */ private final RestClient client;
     /** Parser cùng hệ Jackson đang dùng. */ private final ObjectMapper json = new ObjectMapper();
@@ -55,15 +56,23 @@ public class GeminiOralDecisionProvider implements OralDecisionProvider {
         if (!Set.of("vi", "en").contains(work.language()) || work.history().isEmpty()) throw new AppException(ErrorCode.ORAL_DECISION_FAILED);
         if (!work.canFollowUp()) return OralDecisionResult.advance();
         var guidance=work.assessment();
+        long shared=work.history().stream().filter(t -> t.question().equals(work.mainPrompt())).count();
+        // Chỉ nén khi phần bỏ trùng lớn hơn cả hướng dẫn tham chiếu, kể cả JSON escaping.
+        boolean compact=shared*(json.writeValueAsString(work.mainPrompt()).length()-17)>REFERENCE_HINT.length();
         var input = Map.of("language", work.language(), "mainQuestion", work.mainPrompt(), "canFollowUp", true,
                 "privateAssessment", Map.of("referenceAnswer", Objects.toString(guidance.referenceAnswer(),""),
                         "rubric", Map.of("title",Objects.toString(guidance.rubricTitle(),""),"description",Objects.toString(guidance.rubricDescription(),""),"criteria",guidance.criteria())),
-                "history", work.history().stream().map(t -> Map.of("question", t.question(), "answer", t.answer())).toList());
+                "history", work.history().stream().map(t -> compact && t.question().equals(work.mainPrompt())
+                        ? Map.of("questionRef", "mainQuestion", "answer", t.answer())
+                        : Map.of("question", t.question(), "answer", t.answer())).toList());
+        String serializedInput = json.writeValueAsString(input);
+        log.info("oral-ai-context job={} inputChars={} sharedMainQuestions={}",work.submissionId(),serializedInput.length(),
+                compact?shared:0);
         var schema = Map.of("type", "object", "properties", Map.of(
                 "action", Map.of("type", "string", "enum", List.of("ADVANCE", "FOLLOW_UP")),
                 "prompt", Map.of("type", "string")), "required", List.of("action", "prompt"), "additionalProperties", false);
-        var body = Map.of("model", settings.getModel(), "store", false, "system_instruction", INSTRUCTION,
-                "input", json.writeValueAsString(input),
+        var body = Map.of("model", settings.getModel(), "store", false, "system_instruction", compact?INSTRUCTION+REFERENCE_HINT:INSTRUCTION,
+                "input", serializedInput,
                 "response_format", Map.of("type", "text", "mime_type", "application/json", "schema", schema),
                 "generation_config", Map.of("max_output_tokens", 1024, "thinking_level", "minimal"));
         try {

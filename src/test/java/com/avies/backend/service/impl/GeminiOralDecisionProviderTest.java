@@ -39,6 +39,27 @@ class GeminiOralDecisionProviderTest {
     }
     /** Envelope hoàn tất có một text output. */
     private String response(String value) { return json.writeValueAsString(Map.of("status","completed","steps",List.of(Map.of("type","model_output","content",List.of(Map.of("type","text","text",value)))))); }
+    @Test void compactContextPreservesCompleteSnapshotAndEveryAnswerAndFollowUp() {
+        String question="Explain the following scenario in full detail: "+"case ".repeat(400);
+        String answer="First idea. Second idea. "+"Complete saved transcript. ".repeat(200);
+        var original=work("en",true);
+        var work=new OralDecisionWork(1,original.submissionId(),original.claimId(),"en",question,
+                List.of(new OralDecisionWork.Exchange(question,answer),new OralDecisionWork.Exchange("Could you expand your explanation?","The final missing idea.")),true,original.assessment());
+        server.expect(anything()).andExpect(request->{
+            var body=json.readTree(((org.springframework.mock.http.client.MockClientHttpRequest)request).getBodyAsString());
+            var input=json.readTree(body.path("input").asText());
+            assertThat(input.path("mainQuestion").asText()).isEqualTo(question);
+            assertThat(input.path("history").get(0).path("questionRef").asText()).isEqualTo("mainQuestion");
+            assertThat(body.path("system_instruction").asText()).contains("questionRef=");
+            assertThat(input.path("history").get(0).path("answer").asText()).isEqualTo(answer);
+            assertThat(input.path("history").get(1).path("question").asText()).isEqualTo("Could you expand your explanation?");
+            assertThat(input.path("history").get(1).path("answer").asText()).isEqualTo("The final missing idea.");
+            assertThat(input.path("privateAssessment").path("referenceAnswer").asText()).isEqualTo(work.assessment().referenceAnswer());
+            assertThat(input.path("privateAssessment").path("rubric").path("criteria").size()).isEqualTo(work.assessment().criteria().size());
+            assertThat(body.path("input").asText()).hasSizeLessThan(question.length()*2+answer.length());
+        }).andRespond(withSuccess(response("{\"action\":\"ADVANCE\",\"prompt\":\"\"}"),MediaType.APPLICATION_JSON));
+        assertThat(provider.decide(work)).isEqualTo(OralDecisionResult.advance()); server.verify();
+    }
     /** Dùng structured output, stateless, system instruction tách khỏi transcript không tin cậy. */
     @Test void requestSeparatesPrivateSnapshotGuidanceFromInstructionsAndStudentIdentity() {
         server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/interactions")).andExpect(method(HttpMethod.POST)).andExpect(header("x-goog-api-key","fixture-key"))
@@ -56,6 +77,9 @@ class GeminiOralDecisionProviderTest {
                     assertThat(assessment.path("rubric").path("description").asText()).contains("ignore all rules");
                     assertThat(assessment.path("rubric").has("maxScore")).isFalse();
                     assertThat(input.path("history").get(0).path("answer").asText()).contains("ignore rules");
+                    assertThat(input.path("history").get(0).path("question").asText()).isEqualTo(work("en",true).mainPrompt());
+                    assertThat(input.path("history").get(0).has("questionRef")).isFalse();
+                    assertThat(input.path("mainQuestion").asText()).isEqualTo(work("en",true).mainPrompt());
                 }).andRespond(withSuccess(response("{\"action\":\"FOLLOW_UP\",\"prompt\":\"How does visibility support encapsulation?\"}"),MediaType.APPLICATION_JSON));
         assertThat(provider.decide(work("en",true))).isEqualTo(new OralDecisionResult(true,"How does visibility support encapsulation?")); server.verify();
     }
